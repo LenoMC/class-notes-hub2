@@ -41,7 +41,7 @@ export const WEEK_TYPES = ["A", "B"] as const;
 export const weekTypeValidator = v.union(
   v.literal("A"),
   v.literal("B"),
-  v.literal("AB"), // les deux semaines (r c : cours toute les semaines)
+  v.literal("AB"), // cours toutes les semaines
 );
 export type WeekType = (typeof WEEK_TYPES)[number] | "AB";
 
@@ -65,7 +65,7 @@ const schema = defineSchema(
       isClassAdmin: v.optional(v.boolean()), // responsable (admin) de sa classe
       classId: v.optional(v.id("classes")),
       adminOfClassId: v.optional(v.id("classes")), // classe dont il est responsable
-      options: v.optional(v.array(optionValidator)), // options choisies (0 à plusieurs)
+      options: v.optional(v.array(optionValidator)), // options choisies (1 à 3)
       questionnaireDone: v.optional(v.boolean()),
     })
       .index("email", ["email"]) // index for the email. do not remove or modify
@@ -105,6 +105,19 @@ const schema = defineSchema(
       externalUrl: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_slot", ["slotId"]),
+
+    // Vacances : arrêt de l'alternance A/B (pas de comptage pendant les périodes)
+    holidays: defineTable({
+      label: v.string(), // ex: "Vacances d'hiver"
+      startDay: v.string(), // "YYYY-MM-DD" inclus
+      endDay: v.string(), // "YYYY-MM-DD" inclus
+      createdAt: v.number(),
+    }),
+
+    // Ancre de l'alternance A/B : la semaine du startDay est une semaine A
+    weekAnchor: defineTable({
+      startDay: v.string(), // lundi "YYYY-MM-DD" d'une semaine A
+    }),
   },
   {
     schemaValidation: false,

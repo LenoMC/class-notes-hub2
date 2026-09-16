@@ -7,6 +7,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  Settings,
   Shield,
   X,
 } from "lucide-react";
@@ -117,6 +118,15 @@ export function AppShell({
               variant="ghost"
               size="icon"
               className="size-8 text-muted-foreground hover:text-foreground"
+              onClick={() => navigate("/settings")}
+              title="Mon compte"
+            >
+              <Settings className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground hover:text-foreground"
               onClick={handleSignOut}
               title="Se déconnecter"
             >
@@ -150,7 +160,17 @@ export function AppShell({
             </Button>
           </div>
           <nav className="flex-1 px-3 py-4 space-y-1">{nav}</nav>
-          <div className="border-t border-sidebar-border/60 p-3">
+          <div className="border-t border-sidebar-border/60 p-3 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => {
+                setMobileOpen(false);
+                navigate("/settings");
+              }}
+            >
+              <Settings className="size-4" /> Mon compte
+            </Button>
             <Button variant="outline" className="w-full gap-2" onClick={handleSignOut}>
               <LogOut className="size-4" /> Se déconnecter
             </Button>

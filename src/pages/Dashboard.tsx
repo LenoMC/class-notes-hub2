@@ -13,10 +13,12 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { optionRuleError, subjectColor } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
   CalendarDays,
+  CalendarOff,
   CheckCircle2,
   ClipboardList,
   Download,
@@ -36,14 +38,20 @@ const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
 
 type Me = NonNullable<ReturnType<typeof useAuth>["user"]>;
 
+type WeekState = {
+  week: "A" | "B";
+  isHoliday: boolean;
+  holidayLabel: string | null;
+  nextSchoolMonday: string | null;
+};
+
 export default function Dashboard() {
   const { user, isLoading: authLoading } = useAuth();
   const admins = useQuery(api.app.listAdmins);
   const classFiles = useQuery(api.app.listClassFiles, user?.classId ? {} : "skip");
+  const weekState = useQuery(api.app.weekState) as WeekState | undefined;
   const claimAdmin = useMutation(api.app.claimAdminIfFirst);
   const todayName = DAYS_FR[new Date().getDay()];
-  const isWeekend = todayName === "Samedi" || todayName === "Dimanche";
-  const [week, setWeek] = useState<"A" | "B">("A");
 
   // Bootstrap : le tout premier utilisateur inscrit devient administrateur global.
   useEffect(() => {
@@ -66,8 +74,9 @@ export default function Dashboard() {
       ) : (
         user && (
           <>
-            <HomeHeader user={user} todayName={todayName} week={week} setWeek={setWeek} />
-            <TodaySchedule user={user} todayName={todayName} week={week} />
+            {weekState?.isHoliday && <HolidayBanner weekState={weekState} />}
+            <HomeHeader user={user} todayName={todayName} weekState={weekState} />
+            <TodaySchedule user={user} todayName={todayName} weekState={weekState} />
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <RecentFiles files={classFiles} />
               <AdminsCard admins={admins} />
@@ -75,7 +84,6 @@ export default function Dashboard() {
           </>
         )
       )}
-      {isWeekend ? null : null}
     </AppShell>
   );
 }
@@ -89,14 +97,30 @@ function Questionnaire({ user }: { user: Me }) {
   const [options, setOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const ruleError = optionRuleError(options);
+
   const toggleOption = (opt: string) => {
-    setOptions((prev) =>
-      prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt],
-    );
+    setOptions((prev) => {
+      const next = prev.includes(opt)
+        ? prev.filter((o) => o !== opt)
+        : [...prev, opt];
+      // Interdiction immédiate : Allemand + Espagnol ensemble
+      if (next.includes("Allemand") && next.includes("Espagnol")) {
+        return next.includes(opt)
+          ? next.filter((o) => o !== (opt === "Allemand" ? "Espagnol" : "Allemand"))
+          : next.filter((o) => o !== opt || opt === "Allemand" || opt === "Espagnol");
+      }
+      return next.slice(0, 3);
+    });
   };
 
   const handleSubmit = async () => {
     if (!classId) return;
+    const err = optionRuleError(options);
+    if (err) {
+      toast.error(err);
+      return;
+    }
     setSaving(true);
     try {
       await submit({
@@ -104,8 +128,12 @@ function Questionnaire({ user }: { user: Me }) {
         options: options as (typeof OPTIONS)[number][],
       });
       toast.success("Préférences enregistrées. Bienvenue dans votre espace.");
-    } catch {
-      toast.error("Impossible d'enregistrer. Réessayez.");
+    } catch (e2) {
+      toast.error(
+        e2 instanceof Error && !e2.message.startsWith("{")
+          ? e2.message
+          : "Impossible d'enregistrer. Réessayez.",
+      );
     } finally {
       setSaving(false);
     }
@@ -121,9 +149,8 @@ function Questionnaire({ user }: { user: Me }) {
           Bienvenue{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </CardTitle>
         <CardDescription>
-          Avant de continuer, indiquez votre classe et, si vous en suivez, vos
-          options. Ces informations déterminent votre emploi du temps et les
-          ressources auxquelles vous aurez accès.
+          Avant de continuer, indiquez votre classe et vos options. Ces informations
+          déterminent votre emploi du temps et vos ressources.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -160,12 +187,11 @@ function Questionnaire({ user }: { user: Me }) {
         <div>
           <p className="mb-1 flex items-center gap-2 font-medium">
             <BookOpen className="size-4 text-primary" /> Vos options
-            <span className="text-xs font-normal text-muted-foreground">
-              facultatif — plusieurs choix possibles
-            </span>
           </p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Sélectionnez toutes les options que vous suivez, ou aucune.
+            Au moins une langue : <strong>Allemand</strong> ou <strong>Espagnol</strong>{" "}
+            (pas les deux). Vous pouvez y ajouter <strong>LCE</strong> et/ou{" "}
+            <strong>Latin</strong> — 3 options maximum.
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {OPTIONS.map((opt) => (
@@ -185,13 +211,16 @@ function Questionnaire({ user }: { user: Me }) {
               </button>
             ))}
           </div>
+          {ruleError && (
+            <p className="mt-2 text-xs text-destructive">{ruleError}</p>
+          )}
         </div>
 
         <Button
           className="w-full glow-ring"
           size="lg"
           onClick={handleSubmit}
-          disabled={saving || !classId}
+          disabled={saving || !classId || !!ruleError}
         >
           {saving ? "Enregistrement…" : "Valider et continuer"}
         </Button>
@@ -200,18 +229,35 @@ function Questionnaire({ user }: { user: Me }) {
   );
 }
 
+// ---------- Bandeau vacances ----------
+
+function HolidayBanner({ weekState }: { weekState: WeekState }) {
+  const label = weekState.holidayLabel ?? "Vacances scolaires";
+  return (
+    <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3">
+      <CalendarOff className="size-5 text-amber-300 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-amber-100">
+          {label} — pas de cours en ce moment.
+        </p>
+        <p className="text-xs text-amber-200/80">
+          L'alternance semaine A / semaine B reprendra le lundi de la rentrée.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ---------- En-tête accueil ----------
 
 function HomeHeader({
   user,
   todayName,
-  week,
-  setWeek,
+  weekState,
 }: {
   user: Me;
   todayName: string;
-  week: "A" | "B";
-  setWeek: (w: "A" | "B") => void;
+  weekState: WeekState | undefined;
 }) {
   return (
     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
@@ -236,24 +282,20 @@ function HomeHeader({
             <Shield className="size-3.5 text-primary" /> Administrateur
           </Badge>
         )}
-        <div className="flex rounded-lg border border-border overflow-hidden">
-          <Button
-            variant={week === "A" ? "default" : "ghost"}
-            size="sm"
-            className="rounded-none"
-            onClick={() => setWeek("A")}
-          >
-            Semaine A
-          </Button>
-          <Button
-            variant={week === "B" ? "default" : "ghost"}
-            size="sm"
-            className="rounded-none"
-            onClick={() => setWeek("B")}
-          >
-            Semaine B
-          </Button>
-        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "gap-1.5 font-mono",
+            !weekState?.isHoliday && "border-primary/50 text-primary",
+          )}
+        >
+          <CalendarDays className="size-3.5" />
+          {weekState?.isHoliday
+            ? "Vacances"
+            : weekState
+              ? `Semaine ${weekState.week} (actuelle)`
+              : "Semaine…"}
+        </Badge>
         <Button asChild variant="outline">
           <Link to="/edt">
             <CalendarDays className="size-4 mr-1.5" /> EDT complet
@@ -266,10 +308,26 @@ function HomeHeader({
 
 // ---------- EDT du jour ----------
 
-function TodaySchedule({ user, todayName, week }: { user: Me; todayName: string; week: "A" | "B" }) {
-  const slots = useQuery(api.app.listMySlots, { week }) ?? [];
+function TodaySchedule({
+  user,
+  todayName,
+  weekState,
+}: {
+  user: Me;
+  todayName: string;
+  weekState: WeekState | undefined;
+}) {
+  const week: "A" | "B" = weekState?.week ?? "A";
+  const isHoliday = !!weekState?.isHoliday;
+  const slots = useQuery(
+    api.app.listMySlots,
+    isHoliday ? "skip" : { week },
+  ) ?? [];
   const todaySlots = useMemo(
-    () => slots.filter((s) => s.day === todayName),
+    () =>
+      [...slots]
+        .filter((s) => s.day === todayName)
+        .sort((a, b) => a.start.localeCompare(b.start)),
     [slots, todayName],
   );
   const isWeekend = todayName === "Samedi" || todayName === "Dimanche";
@@ -289,23 +347,24 @@ function TodaySchedule({ user, todayName, week }: { user: Me; todayName: string;
       </CardHeader>
       <CardContent>
         {user.classId ? (
-          todaySlots.length === 0 ? (
+          isWeekend || isHoliday || todaySlots.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <Hourglass className="size-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 {isWeekend
                   ? "C'est le week-end. Aucun cours programmé."
-                  : `Aucun cours programmé aujourd'hui pour la semaine ${week}.`}
+                  : isHoliday
+                    ? "Vacances scolaires : aucun cours pendant cette période."
+                    : `Aucun cours programmé aujourd'hui pour la semaine ${week}.`}
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               {todaySlots.map((slot) => (
-                <Link
+                <div
                   key={slot._id}
-                  to={`/edt?slot=${slot._id}`}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-4 py-3 transition-colors hover:border-primary/50 cursor-pointer",
+                    "flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-4 py-3 transition-colors hover:border-primary/50",
                     slot.cancelled && "opacity-70",
                   )}
                 >
@@ -314,9 +373,11 @@ function TodaySchedule({ user, todayName, week }: { user: Me; todayName: string;
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      {slot.subject}
+                      <span className={cn("rounded border px-1.5 py-0.5 mr-2", subjectColor(slot.subject))}>
+                        {slot.subject}
+                      </span>
                       {slot.cancelled && (
-                        <span className="ml-2 text-xs text-destructive">(annulé)</span>
+                        <span className="text-xs text-destructive">(annulé)</span>
                       )}
                       {slot.weekType !== "AB" && (
                         <Badge variant="outline" className="ml-2 text-[10px] font-mono">
@@ -335,7 +396,12 @@ function TodaySchedule({ user, todayName, week }: { user: Me; todayName: string;
                       {slot.room}
                     </Badge>
                   )}
-                </Link>
+                  {!slot.cancelled && (
+                    <Button asChild variant="ghost" size="sm" className="text-xs">
+                      <Link to={`/edt?slot=${slot._id}`}>Voir les devoirs</Link>
+                    </Button>
+                  )}
+                </div>
               ))}
             </div>
           )

@@ -1,7 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
 import { optionValidator, weekTypeValidator } from "./schema";
+import { optionRuleError } from "../lib/subjects";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // ---------- Rôles & helpers ----------
@@ -21,6 +22,14 @@ async function requireAdmin(ctx: any): Promise<UserDoc> {
   if (!user.isAdmin) throw new Error("Réservé aux administrateurs du site");
   return user;
 }
+
+function validOptionsOrThrow(options: Array<string>): OptionValue[] {
+  const err = optionRuleError(options);
+  if (err) throw new Error(err);
+  return options as OptionValue[];
+}
+
+type OptionValue = Doc<"users">["options"] extends Array<infer T> ? T : never;
 
 // ---------- Utilisateur courant ----------
 
@@ -63,17 +72,39 @@ export const listClasses = query({
 export const submitQuestionnaire = mutation({
   args: {
     classId: v.id("classes"),
-    options: v.array(optionValidator),
+    options: v.array(v.string()),
   },
   handler: async (ctx, { classId, options }) => {
     const user = await requireUser(ctx);
     const classroom = await ctx.db.get(classId);
     if (!classroom) throw new Error("Classe introuvable");
+    const validated = validOptionsOrThrow(options);
     await ctx.db.patch(user._id, {
       classId,
-      options,
+      options: validated,
       questionnaireDone: true,
     });
+  },
+});
+
+// ---------- Profil : modification de ses informations ----------
+
+export const updateProfile = mutation({
+  args: {
+    name: v.optional(v.string()),
+    classId: v.optional(v.union(v.id("classes"), v.null())),
+    options: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { name, classId, options }) => {
+    const user = await requireUser(ctx);
+    const update: Record<string, unknown> = {};
+    if (name !== undefined) update.name = name.trim() || undefined;
+    if (classId !== undefined) update.classId = classId ?? undefined;
+    if (options !== undefined) {
+      update.options = validOptionsOrThrow(options);
+      update.questionnaireDone = true;
+    }
+    await ctx.db.patch(user._id, update);
   },
 });
 
@@ -144,7 +175,210 @@ export const deleteClass = mutation({
   },
 });
 
+// ---------- Vacances & alternance A/B ----------
+
+// Règle établie avec l'utilisateur : le lundi 8 septembre 2025 est une semaine A.
+const ANCHOR_DEFAULT = "2025-09-08";
+
+function dayToString(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function mondayOf(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const shift = (d.getDay() + 6) % 7; // 0 = lundi
+  d.setDate(d.getDate() - shift);
+  return d;
+}
+
+function toUTC(day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+function overlaps(anchor: { startDay: string }, h: { startDay: string; endDay: string }): boolean {
+  // Semaine (lundi->dimanche) de l'ancre vs période de vacances
+  const a = toUTC(anchor.startDay);
+  const aEnd = a + 6 * 24 * 3600 * 1000;
+  return a <= toUTC(h.endDay) && aEnd >= toUTC(h.startDay);
+}
+
+function nextMonday(after: string): string {
+  const [y, m, d] = after.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + 1);
+  while (date.getDay() !== 1) date.setDate(date.getDate() + 1);
+  return dayToString(date);
+}
+
+function computeWeekState(
+  today: string,
+  anchorRaw: string | null,
+  holidays: Array<{ label: string; startDay: string; endDay: string }>,
+): { week: "A" | "B"; isHoliday: boolean; holidayLabel: string | null; nextSchoolMonday: string | null } {
+  const anchor = anchorRaw ?? ANCHOR_DEFAULT;
+  const t = toUTC(today);
+
+  // Vacances en cours aujourd'hui ?
+  for (const h of holidays) {
+    if (t >= toUTC(h.startDay) && t <= toUTC(h.endDay)) {
+      return {
+        week: "A", // valeur neutre : l'alternance est suspendue
+        isHoliday: true,
+        holidayLabel: h.label ?? null,
+        nextSchoolMonday: nextMonday(h.endDay),
+      };
+    }
+  }
+
+  // Ancres à exclure (semaines bloquées par des vacances)
+  const blocked = new Set<string>();
+  for (const h of holidays) {
+    let cursor = mondayOf(new Date(toUTC(h.startDay)));
+    const end = new Date(toUTC(h.endDay));
+    while (cursor.getTime() <= end.getTime()) {
+      blocked.add(dayToString(cursor));
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    // L'ancre peut tomber en milieu de semaine de vacances
+    const anchorMon = mondayOf(new Date(toUTC(anchor)));
+    if (overlaps({ startDay: dayToString(anchorMon) }, h)) blocked.add(dayToString(anchorMon));
+  }
+
+  // Nombre de semaines A écoulées depuis l'ancre (hors vacances)
+  const cursor = mondayOf(new Date(toUTC(anchor)));
+  const todayMon = mondayOf(new Date(t));
+  let aCount = 0;
+  while (cursor.getTime() <= todayMon.getTime()) {
+    if (!blocked.has(dayToString(cursor))) aCount += 1;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return {
+    week: aCount % 2 === 1 ? "A" : "B",
+    isHoliday: false,
+    holidayLabel: null,
+    nextSchoolMonday: null,
+  };
+}
+
+function getAnchorRaw(anchor: Doc<"weekAnchor"> | null): string | null {
+  return anchor?.startDay ?? null;
+}
+
+/** État de l'alternance A/B : semaine actuelle + vacances en cours. */
+export const weekState = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date();
+    const today = dayToString(now);
+    const anchor = await ctx.db.query("weekAnchor").first();
+    const holidays = await ctx.db.query("holidays").collect();
+    return computeWeekState(
+      today,
+      getAnchorRaw(anchor),
+      holidays.map((h) => ({ label: h.label, startDay: h.startDay, endDay: h.endDay })),
+    );
+  },
+});
+
+// ---------- Gestion des vacances & ancre (admin global) ----------
+
+export const listHolidays = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx);
+    const rows = await ctx.db.query("holidays").collect();
+    rows.sort((a, b) => a.startDay.localeCompare(b.startDay));
+    return rows.map((h) => ({
+      _id: h._id,
+      label: h.label,
+      startDay: h.startDay,
+      endDay: h.endDay,
+    }));
+  },
+});
+
+export const addHoliday = mutation({
+  args: { label: v.string(), startDay: v.string(), endDay: v.string() },
+  handler: async (ctx, { label, startDay, endDay }) => {
+    await requireAdmin(ctx);
+    if (!startDay || !endDay || endDay < startDay) {
+      throw new Error("Dates invalides");
+    }
+    await ctx.db.insert("holidays", {
+      label: label.trim() || "Vacances",
+      startDay,
+      endDay,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const deleteHoliday = mutation({
+  args: { holidayId: v.id("holidays") },
+  handler: async (ctx, { holidayId }) => {
+    await requireAdmin(ctx);
+    await ctx.db.delete(holidayId);
+  },
+});
+
+export const getWeekAnchor = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx);
+    const anchor = await ctx.db.query("weekAnchor").first();
+    return { startDay: getAnchorRaw(anchor) ?? ANCHOR_DEFAULT };
+  },
+});
+
+export const setWeekAnchor = mutation({
+  args: { startDay: v.string() },
+  handler: async (ctx, { startDay }) => {
+    await requireAdmin(ctx);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDay)) {
+      throw new Error("Date invalide");
+    }
+    const existing = await ctx.db.query("weekAnchor").first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { startDay });
+    } else {
+      await ctx.db.insert("weekAnchor", { startDay });
+    }
+  },
+});
+
 // ---------- Emploi du temps ----------
+
+const MERCREDI_LIMITE = "12:10";
+const WEEKEND_DAYS = ["Samedi", "Dimanche"];
+
+function validateSlot(
+  user: UserDoc,
+  targetClassId: Id<"classes">,
+  day: string,
+  start: string,
+  end: string,
+  subject: string,
+) {
+  if (!user.isAdmin && !(user.isClassAdmin && user.classId === targetClassId)) {
+    throw new Error("Réservé aux admins");
+  }
+  if (!start || !end || end <= start) {
+    throw new Error("Horaires invalides");
+  }
+  if (WEEKEND_DAYS.includes(day)) {
+    throw new Error("Il n'y a pas cours le week-end.");
+  }
+  if (day === "Mercredi" && end > MERCREDI_LIMITE) {
+    throw new Error(`Le mercredi, les cours s'arrêtent au plus tard à ${MERCREDI_LIMITE}.`);
+  }
+  if (!subject.trim()) {
+    throw new Error("Matière requise");
+  }
+}
 
 function slotView(slot: Doc<"timetableSlots">) {
   return {
@@ -213,8 +447,6 @@ export const upsertSlot = mutation({
       v.literal("Mercredi"),
       v.literal("Jeudi"),
       v.literal("Vendredi"),
-      v.literal("Samedi"),
-      v.literal("Dimanche"),
     ),
     start: v.string(),
     end: v.string(),
@@ -229,13 +461,8 @@ export const upsertSlot = mutation({
       ? (await ctx.db.get(args.slotId))?.classId
       : args.classId;
     if (!targetClassId) throw new Error("Créneau introuvable");
-    if (!user.isAdmin && !(user.isClassAdmin && user.classId === targetClassId)) {
-      throw new Error("Réservé aux admins");
-    }
+    validateSlot(user, targetClassId, args.day, args.start, args.end, args.subject);
     const { slotId, ...rest } = args;
-    if (!rest.start || !rest.end || rest.end <= rest.start) {
-      throw new Error("Horaires invalides");
-    }
     if (slotId) {
       await ctx.db.patch(slotId, rest);
       return slotId;
@@ -330,6 +557,10 @@ export const addFileMeta = mutation({
     if (!user.isAdmin && !(user.isClassAdmin && user.classId === slot.classId)) {
       throw new Error("Seuls les admins peuvent ajouter des fichiers");
     }
+    // EPS : aucune publication de devoirs/fichiers
+    if (isEps(slot.subject) && args.kind === "devoir") {
+      throw new Error("Aucun devoir n'est publié pour l'EPS.");
+    }
     const { slotId, ...rest } = args;
     return ctx.db.insert("courseFiles", {
       slotId,
@@ -338,6 +569,15 @@ export const addFileMeta = mutation({
     });
   },
 });
+
+function isEps(subject: string): boolean {
+  const n = subject
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (/chimie/.test(n)) return false;
+  return /(\beps\b|ed\s*\.?\s*physique|\bsport\b)/.test(n);
+}
 
 export const deleteFile = mutation({
   args: { fileId: v.id("courseFiles") },
@@ -389,7 +629,6 @@ export const listAdmins = query({
         (u) =>
           u.isClassAdmin &&
           !u.isAnonymous &&
-          // Un responsable est affiché pour sa classe désignée ou sa classe membre
           meUser.classId &&
           (u.adminOfClassId === meUser.classId || u.classId === meUser.classId),
       )
@@ -490,7 +729,7 @@ export const updateUser = mutation({
     isClassAdmin: v.optional(v.boolean()),
     adminOfClassId: v.optional(v.union(v.id("classes"), v.null())),
     classId: v.optional(v.union(v.id("classes"), v.null())),
-    options: v.optional(v.array(optionValidator)),
+    options: v.optional(v.array(v.string())),
   },
   handler: async (ctx, { userId, ...patch }) => {
     const admin = await requireAdmin(ctx);
@@ -504,7 +743,10 @@ export const updateUser = mutation({
       update.adminOfClassId = patch.adminOfClassId ?? undefined;
     }
     if (patch.classId !== undefined) update.classId = patch.classId ?? undefined;
-    if (patch.options !== undefined) update.options = patch.options;
+    if (patch.options !== undefined) {
+      update.options = validOptionsOrThrow(patch.options);
+      update.questionnaireDone = true;
+    }
     // Sécurité : impossible de retirer le dernier administrateur global
     if (
       userId === admin._id &&
@@ -517,7 +759,8 @@ export const updateUser = mutation({
   },
 });
 
-async function countAdmins(ctx: any): Promise<number> {    const users = await ctx.db.query("users").collect();
+async function countAdmins(ctx: any): Promise<number> {
+  const users = await ctx.db.query("users").collect();
   return users.filter((u: UserDoc) => u.isAdmin).length;
 }
 

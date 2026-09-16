@@ -23,6 +23,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { isEpsSubject, subjectColor } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
   Ban,
@@ -31,6 +32,8 @@ import {
   ExternalLink,
   FileUp,
   Link2,
+  Lock,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -39,8 +42,10 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
-const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i); // 8h -> 19h
+const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
+const DAY_START = 8; // 8h00
+const DAY_END = 18.5; // 18h30
+const HOUR_PX = 52;
 
 type Slot = {
   _id: Id<"timetableSlots">;
@@ -55,14 +60,27 @@ type Slot = {
   cancellationReason?: string;
 };
 
+type WeekState = {
+  week: "A" | "B";
+  isHoliday: boolean;
+  holidayLabel: string | null;
+  nextSchoolMonday: string | null;
+};
+
 export default function Timetable() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedSlotId = searchParams.get("slot");
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
 
-  const [week, setWeek] = useState<"A" | "B" | "AB">("AB");
+  const weekState = useQuery(api.app.weekState) as WeekState | undefined;
+  // Vue : "cur" = semaine actuelle (A ou B selon l'alternance), A, B ou A+B.
+  const [view, setView] = useState<"cur" | "A" | "B" | "AB">("cur");
+  const activeWeek: "A" | "B" =
+    view === "AB" ? "A" : view === "cur" ? (weekState?.week ?? "A") : view;
 
-  const slots = useQuery(api.app.listMySlots, week === "AB" ? {} : { week }) ?? [];
+  const slots =
+    useQuery(api.app.listMySlots, view === "AB" ? {} : { week: activeWeek }) ?? [];
   const [selected, setSelected] = useState<Slot | null>(null);
 
   useEffect(() => {
@@ -81,7 +99,27 @@ export default function Timetable() {
     setSearchParams({}, { replace: true });
   };
 
+  // Édition demandée depuis le dialog d'un cours (bouton « Modifier »)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (!id) return;
+      setEditingSlotId(id);
+    };
+    window.addEventListener("coursflow:edit-slot", handler);
+    return () => window.removeEventListener("coursflow:edit-slot", handler);
+  }, []);
+
   if (!user) return null;
+
+  const weekLabel =
+    view === "cur"
+      ? weekState?.isHoliday
+        ? "Vacances scolaires"
+        : `Semaine ${weekState?.week ?? "…"} — semaine actuelle`
+      : view === "AB"
+        ? "Toutes les semaines"
+        : `Semaine ${view}`;
 
   return (
     <AppShell isAdmin={user.isAdmin}>
@@ -99,16 +137,31 @@ export default function Timetable() {
         <TimetableGrid
           slots={slots as Slot[]}
           onOpen={openSlot}
+          onEdit={(slot) => setEditingSlotId(slot._id)}
           isClassAdmin={user.isClassAdmin}
           isAdmin={user.isAdmin}
           classId={user.classId}
-          week={week}
-          setWeek={setWeek}
+          view={view}
+          setView={setView}
+          weekLabel={weekLabel}
+          weekState={weekState}
         />
       )}
 
       {selected && (
-        <SlotDialog slot={selected} canEdit={user.isAdmin || user.isClassAdmin} onClose={closeSlot} />
+        <SlotDialog
+          slot={selected}
+          canEdit={user.isAdmin || user.isClassAdmin}
+          onClose={closeSlot}
+        />
+      )}
+
+      {editingSlotId && user.classId && (
+        <EditSlotDialog
+          slot={(slots as Slot[]).find((s) => s._id === editingSlotId) ?? null}
+          classId={user.classId}
+          onDone={() => setEditingSlotId(null)}
+        />
       )}
     </AppShell>
   );
@@ -119,23 +172,29 @@ export default function Timetable() {
 function TimetableGrid({
   slots,
   onOpen,
+  onEdit,
   isClassAdmin,
   isAdmin,
   classId,
-  week,
-  setWeek,
+  view,
+  setView,
+  weekLabel,
+  weekState,
 }: {
   slots: Slot[];
   onOpen: (slot: Slot) => void;
+  onEdit: (slot: Slot) => void;
   isClassAdmin: boolean;
   isAdmin: boolean;
   classId: Id<"classes">;
-  week: "A" | "B" | "AB";
-  setWeek: (w: "A" | "B" | "AB") => void;
+  view: "cur" | "A" | "B" | "AB";
+  setView: (w: "cur" | "A" | "B" | "AB") => void;
+  weekLabel: string;
+  weekState: WeekState | undefined;
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
-  const days = DAYS.slice(0, 6); // Lundi -> Samedi
+  const totalH = DAY_END - DAY_START;
 
   return (
     <>
@@ -144,18 +203,31 @@ function TimetableGrid({
           <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
           <p className="text-sm text-muted-foreground">
             Sélectionnez un cours pour consulter ses documents.
+            {weekState?.isHoliday && weekState.holidayLabel && (
+              <span className="ml-2 text-amber-300">
+                {weekState.holidayLabel} — reprise le{" "}
+                {formatDay(weekState.nextSchoolMonday)}.
+              </span>
+            )}
           </p>
         </div>
         <div className="flex rounded-lg border border-border overflow-hidden">
-          {(["A", "B", "AB"] as const).map((w) => (
+          {(
+            [
+              ["cur", "Actuelle"],
+              ["A", "A"],
+              ["B", "B"],
+              ["AB", "A + B"],
+            ] as const
+          ).map(([w, label]) => (
             <Button
               key={w}
-              variant={week === w ? "default" : "ghost"}
+              variant={view === w ? "default" : "ghost"}
               size="sm"
               className="rounded-none font-mono"
-              onClick={() => setWeek(w)}
+              onClick={() => setView(w)}
             >
-              {w === "AB" ? "A + B" : `Semaine ${w}`}
+              {label}
             </Button>
           ))}
         </div>
@@ -166,63 +238,132 @@ function TimetableGrid({
         )}
       </div>
 
-      <Card className="panel border-border/70 overflow-x-auto">
-        <CardContent className="p-3 sm:p-4">
-          <div className="min-w-[760px]">
-            <div className="grid" style={{ gridTemplateColumns: "56px repeat(6, 1fr)" }}>
-              <div />
-              {days.map((d) => (
-                <div key={d} className="pb-2 text-center text-sm font-semibold">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="relative grid" style={{ gridTemplateColumns: "56px repeat(6, 1fr)" }}>
-              {/* Colonne des heures */}
-              <div>
-                {HOURS.map((h) => (
-                  <div key={h} className="h-14 text-right pr-2 text-[10px] text-muted-foreground font-mono relative">
-                    <span className="absolute top-0">{h}:00</span>
+      <Badge variant="outline" className="mb-3 font-mono text-xs">
+        {weekLabel}
+      </Badge>
+
+      <Card className="panel border-border/70 overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-auto max-h-[70vh]">
+            <div className="min-w-[720px]">
+              {/* En-tête des jours */}
+              <div
+                className="sticky top-0 z-10 grid bg-background/95 backdrop-blur-sm border-b border-border/60"
+                style={{ gridTemplateColumns: "56px repeat(5, 1fr)" }}
+              >
+                <div />
+                {DAYS.map((d) => (
+                  <div key={d} className="py-2 text-center text-sm font-semibold">
+                    {d}
                   </div>
                 ))}
               </div>
-              {days.map((day, dayIdx) => (
-                <div key={day} className="relative border-l border-border/60">
-                  {HOURS.map((h) => (
-                    <div key={h} className="h-14 border-b border-border/40" />
-                  ))}
-                  {slots
-                    .filter((s) => s.day === day)
-                    .map((slot) => {
-                      const [sh, sm] = slot.start.split(":").map(Number);
-                      const [eh, em] = slot.end.split(":").map(Number);
-                      const startH = sh + sm / 60;
-                      const endH = eh + em / 60;
-                      const top = (startH - 8) * 56;
-                      const height = Math.max((endH - startH) * 56 - 4, 28);
-                      return (                        <button
-                          key={slot._id}
-                          onClick={() => onOpen(slot)}
-                          style={{ top: top + 2, height }}
-                          className={cn(
-                            "absolute left-1 right-1 rounded-lg border px-2 py-1 text-left overflow-hidden transition-all cursor-pointer hover:z-10 hover:scale-[1.02]",
-                            slot.cancelled
-                              ? "border-destructive/50 bg-destructive/10 line-through decoration-destructive/60"
-                              : "border-primary/40 bg-primary/10 hover:bg-primary/15 glow-ring-soft",
-                            dayIdx >= 5 && "opacity-80",
-                          )}
-                        >
-                          <p className="text-xs font-semibold truncate">{slot.subject}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">
-                            {slot.cancelled ? "Annulé · " : ""}
-                            {slot.start}–{slot.end}
-                            {slot.room ? ` · ${slot.room}` : ""}
-                          </p>
-                        </button>
-                      );
-                    })}
+              {/* Corps */}
+              <div
+                className="relative grid"
+                style={{
+                  gridTemplateColumns: "56px repeat(5, 1fr)",
+                  height: totalH * HOUR_PX,
+                }}
+              >
+                {/* Colonne des heures */}
+                <div className="relative">
+                  {Array.from({ length: Math.ceil(totalH * 2) }, (_, i) => {
+                    const h = DAY_START + i / 2;
+                    const hh = Math.floor(h);
+                    const mm = h % 1 === 0 ? "00" : "30";
+                    return (
+                      <div
+                        key={i}
+                        className="absolute right-2 text-[10px] text-muted-foreground font-mono"
+                        style={{ top: (h - DAY_START) * HOUR_PX - 6 }}
+                      >
+                        {hh}:{mm}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+                {DAYS.map((day) => (
+                  <div key={day} className="relative border-l border-border/60">
+                    {Array.from({ length: Math.ceil(totalH * 2) }, (_, i) => (
+                      <div
+                        key={i}
+                        className="absolute inset-x-0"
+                        style={{
+                          top: (i + 1) * (HOUR_PX / 2),
+                          borderTop: "1px solid hsl(var(--border) / 0.4)",
+                        }}
+                      />
+                    ))}
+                    {slots
+                      .filter((s) => s.day === day)
+                      .map((slot) => {
+                        const [sh, sm] = slot.start.split(":").map(Number);
+                        const [eh, em] = slot.end.split(":").map(Number);
+                        const startH = sh + sm / 60;
+                        const endH = eh + em / 60;
+                        const top = (startH - DAY_START) * HOUR_PX;
+                        const height = Math.max((endH - startH) * HOUR_PX - 3, 26);
+                        const eps = isEpsSubject(slot.subject);
+                        return (
+                          <div
+                            key={slot._id}
+                            style={{ top: top + 2, height }}
+                            className={cn(
+                              "absolute left-1 right-1 rounded-lg border px-2 py-1 text-left overflow-hidden",
+                              slot.cancelled && "line-through decoration-destructive/60",
+                              !eps && "transition-all hover:z-10 hover:brightness-125",
+                              eps ? "cursor-default" : "cursor-pointer",
+                              subjectColor(slot.subject),
+                            )}
+                            onClick={() => {
+                              // Le sport n'a pas de devoirs : case non cliquable
+                              if (eps) return;
+                              onOpen(slot);
+                            }}
+                            title={
+                              eps
+                                ? "EPS — aucun devoir ni document"
+                                : `${slot.subject} — voir les documents`
+                            }
+                          >
+                            <p className="text-xs font-semibold truncate leading-tight">
+                              {slot.cancelled && (
+                                <Ban className="inline size-3 mr-1 text-destructive" />
+                              )}
+                              {slot.subject}
+                            </p>
+                            {height > 40 && (
+                              <p className="text-[10px] opacity-80 truncate leading-tight">
+                                {slot.start}–{slot.end}
+                                {slot.teacher ? ` · ${slot.teacher}` : ""}
+                                {slot.room ? ` · ${slot.room}` : ""}
+                              </p>
+                            )}
+                            {eps && canEdit && (
+                              <button
+                                type="button"
+                                className="absolute right-1 top-1 rounded p-1 bg-background/60 opacity-70 hover:opacity-100 cursor-pointer"
+                                title="Modifier ou supprimer ce cours"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEdit(slot);
+                                }}
+                              >
+                                <Pencil className="size-3" />
+                              </button>
+                            )}
+                            {slot.cancelled && height > 50 && (
+                              <p className="text-[10px] text-destructive font-medium">
+                                Annulé
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -236,6 +377,16 @@ function TimetableGrid({
       />
     </>
   );
+}
+
+function formatDay(day: string | null): string {
+  if (!day) return "…";
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 }
 
 // ---------- Dialog cours + fichiers ----------
@@ -268,6 +419,7 @@ function SlotDialog({
   const [showCancel, setShowCancel] = useState(false);
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
+  const eps = isEpsSubject(slot.subject);
 
   const handleCancelToggle = async () => {
     setWorking(true);
@@ -297,16 +449,22 @@ function SlotDialog({
           <div className="flex items-start justify-between gap-3">
             <div>
               <DialogTitle className="text-xl flex items-center gap-2 flex-wrap">
-                {slot.subject}
-                {slot.cancelled && (
-                  <Badge className="bg-destructive/15 text-destructive border border-destructive/40 gap-1">
-                    <Ban className="size-3" /> Annulé
-                  </Badge>
-                )}
+                <span
+                  className={cn("rounded-md border px-2 py-0.5", subjectColor(slot.subject))}
+                >
+                  {slot.subject}
+                  {slot.cancelled && (
+                    <Badge className="ml-2 bg-destructive/15 text-destructive border border-destructive/40 gap-1">
+                      <Ban className="size-3" /> Annulé
+                    </Badge>
+                  )}
+                </span>
               </DialogTitle>
               <DialogDescription>
                 {slot.day} · {slot.start}–{slot.end}
-                {slot.weekType !== "AB" ? ` · semaine ${slot.weekType}` : " · toutes les semaines"}
+                {slot.weekType !== "AB"
+                  ? ` · semaine ${slot.weekType}`
+                  : " · toutes les semaines"}
                 {slot.teacher ? ` · ${slot.teacher}` : ""}
                 {slot.room ? ` · salle ${slot.room}` : ""}
               </DialogDescription>
@@ -318,38 +476,51 @@ function SlotDialog({
           </div>
         </DialogHeader>
 
-        {slot.cancelled && slot.cancellationReason && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Motif de l'annulation : {slot.cancellationReason}
+        {eps && (
+          <div className="rounded-lg border border-border/70 bg-secondary/40 px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+            <Lock className="size-4" />
+            L'EPS n'a pas de devoirs : cette matière ne comporte aucun document.
           </div>
         )}
 
-        <div className="space-y-2">
-          {!files ? (
-            <Skeleton className="h-20 w-full" />
-          ) : files.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Aucun fichier pour ce cours
-              {canEdit ? " — publiez le premier document." : " pour l'instant."}
-            </p>
-          ) : (
-            files.map((f) => <FileCard key={f._id} file={f as FileRow} canEdit={canEdit} />)
-          )}
-        </div>
+        {!eps && (
+          <>
+            {slot.cancelled && slot.cancellationReason && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Motif de l'annulation : {slot.cancellationReason}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {!files ? (
+                <Skeleton className="h-20 w-full" />
+              ) : files.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Aucun fichier pour ce cours
+                  {canEdit ? " — publiez le premier document." : " pour l'instant."}
+                </p>
+              ) : (
+                files.map((f) => (
+                  <FileCard key={f._id} file={f as FileRow} canEdit={canEdit} />
+                ))
+              )}
+            </div>
+
+            {canEdit && (
+              <Button className="w-full" onClick={() => setShowUpload((v) => !v)}>
+                <FileUp className="size-4 mr-1.5" />
+                {showUpload ? "Fermer" : "Ajouter un fichier (cours ou devoir)"}
+              </Button>
+            )}
+            {canEdit && showUpload && (
+              <UploadForm slotId={slot._id} onDone={() => setShowUpload(false)} />
+            )}
+          </>
+        )}
 
         {canEdit && (
-          <Button className="w-full" onClick={() => setShowUpload((v) => !v)}>
-            <FileUp className="size-4 mr-1.5" />
-            {showUpload ? "Fermer" : "Ajouter un fichier (cours ou devoir)"}
-          </Button>
-        )}
-        {canEdit && showUpload && (
-          <UploadForm slotId={slot._id} onDone={() => setShowUpload(false)} />
-        )}
-
-        {canEdit && (
-          <div className="border-t border-border/60 pt-3">
-            {!showCancel ? (
+          <div className="border-t border-border/60 pt-3 space-y-2">
+            {!eps && !showCancel && (
               <Button
                 variant="outline"
                 className="w-full"
@@ -365,7 +536,8 @@ function SlotDialog({
                   </>
                 )}
               </Button>
-            ) : (
+            )}
+            {!eps && showCancel && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -403,10 +575,29 @@ function SlotDialog({
                 </div>
               </form>
             )}
+            {canEdit && <EditHint slotId={slot._id} onEdit={onClose} />}
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Ouvre l'édition du créneau via un événement écouté par la page EDT
+function EditHint({ slotId, onEdit }: { slotId: string; onEdit: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      className="w-full"
+      onClick={() => {
+        window.dispatchEvent(
+          new CustomEvent("coursflow:edit-slot", { detail: slotId }),
+        );
+        onEdit();
+      }}
+    >
+      <Pencil className="size-4 mr-1.5" /> Modifier ou supprimer ce cours
+    </Button>
   );
 }
 
@@ -453,7 +644,9 @@ function FileCard({ file, canEdit }: { file: FileRow; canEdit: boolean }) {
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {file.hasFile && file.storageId && <DownloadButton storageId={file.storageId} fileName={file.fileName} />}
+          {file.hasFile && file.storageId && (
+            <DownloadButton storageId={file.storageId} fileName={file.fileName} />
+          )}
           {file.externalUrl && (
             <a href={file.externalUrl} target="_blank" rel="noopener noreferrer">
               <Button variant="ghost" size="icon" title="Ouvrir le lien">
@@ -462,7 +655,13 @@ function FileCard({ file, canEdit }: { file: FileRow; canEdit: boolean }) {
             </a>
           )}
           {canEdit && (
-            <Button variant="ghost" size="icon" onClick={handleDelete} disabled={deleting} title="Supprimer">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Supprimer"
+            >
               <Trash2 className="size-4 text-destructive" />
             </Button>
           )}
@@ -472,7 +671,13 @@ function FileCard({ file, canEdit }: { file: FileRow; canEdit: boolean }) {
   );
 }
 
-function DownloadButton({ storageId, fileName }: { storageId: Id<"_storage">; fileName: string }) {
+function DownloadButton({
+  storageId,
+  fileName,
+}: {
+  storageId: Id<"_storage">;
+  fileName: string;
+}) {
   const getUrl = useQuery(api.app.getFileUrl, { storageId });
   return (
     <a href={getUrl ?? undefined} download={fileName}>
@@ -485,7 +690,13 @@ function DownloadButton({ storageId, fileName }: { storageId: Id<"_storage">; fi
 
 // ---------- Formulaire d'upload ----------
 
-function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: () => void }) {
+function UploadForm({
+  slotId,
+  onDone,
+}: {
+  slotId: Id<"timetableSlots">;
+  onDone: () => void;
+}) {
   const addFile = useMutation(api.app.addFileMeta);
   const generateUploadUrl = useMutation(api.app.generateUploadUrl);
   const [kind, setKind] = useState<"cours" | "devoir">("devoir");
@@ -498,7 +709,7 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || (!file && !externalUrl.trim())) {
-      toast.error("Ajoute un titre puis un fichier ou un lien.");
+      toast.error("Ajoutez un titre puis un fichier ou un lien.");
       return;
     }
     setUploading(true);
@@ -509,9 +720,7 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
       let bytes: number | undefined;
 
       if (file) {
-        // 1) Obtenir une URL d'upload signée depuis le backend
         const postUrl = await generateUploadUrl();
-        // 2) Envoyer le fichier directement au stockage Convex
         const res = await fetch(postUrl, {
           method: "POST",
           headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -550,7 +759,10 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-border/70 bg-secondary/30 p-3">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-3 rounded-lg border border-border/70 bg-secondary/30 p-3"
+    >
       <div className="grid grid-cols-2 gap-2">
         <Button
           type="button"
@@ -571,11 +783,23 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="up-title">Titre</Label>
-        <Input id="up-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="DM n°3 — chapitre 4" required />
+        <Input
+          id="up-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="DM n°3 — chapitre 4"
+          required
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="up-desc">Consigne (facultatif)</Label>
-        <Textarea id="up-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="À rendre pour vendredi, exercices 12 à 14…" rows={2} />
+        <Textarea
+          id="up-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="À rendre pour vendredi, exercices 12 à 14…"
+          rows={2}
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="up-file">Fichier</Label>
@@ -588,7 +812,13 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="up-url">Ou lien externe (Drive, CNED…)</Label>
-        <Input id="up-url" type="url" value={externalUrl} onChange={(e) => setExternalUrl(e.target.value)} placeholder="https://…" />
+        <Input
+          id="up-url"
+          type="url"
+          value={externalUrl}
+          onChange={(e) => setExternalUrl(e.target.value)}
+          placeholder="https://…"
+        />
       </div>
       <Button type="submit" className="w-full" disabled={uploading}>
         {uploading ? "Envoi…" : "Publier"}
@@ -597,7 +827,213 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
   );
 }
 
-// ---------- Dialog ajout de créneau (admins) ----------
+// ---------- Formulaire ajout / édition de créneau (admins) ----------
+
+const COMMON_SUBJECTS = [
+  "Français",
+  "Mathématiques",
+  "Histoire-Géographie",
+  "Anglais",
+  "Espagnol",
+  "Allemand",
+  "Physique-Chimie",
+  "SVT",
+  "Technologie",
+  "EPS",
+  "Arts Plastiques",
+  "Musique",
+  "Latin",
+  "LCE",
+  "Vie de classe",
+];
+
+function SlotForm({
+  classId,
+  initial,
+  onDone,
+}: {
+  classId: Id<"classes">;
+  initial?: Slot | null;
+  onDone: () => void;
+}) {
+  const upsert = useMutation(api.app.upsertSlot);
+  const remove = useMutation(api.app.deleteSlot);
+  const [day, setDay] = useState<string>(initial?.day ?? "Lundi");
+  const [start, setStart] = useState(initial?.start ?? "08:00");
+  const [end, setEnd] = useState(initial?.end ?? "09:00");
+  const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [teacher, setTeacher] = useState(initial?.teacher ?? "");
+  const [room, setRoom] = useState(initial?.room ?? "");
+  const [weekType, setWeekType] = useState<"A" | "B" | "AB">(
+    initial?.weekType ?? "AB",
+  );
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await upsert({
+        slotId: initial?._id,
+        classId,
+        day: day as (typeof DAYS)[number],
+        start,
+        end,
+        subject: subject.trim(),
+        teacher: teacher.trim() || undefined,
+        room: room.trim() || undefined,
+        weekType,
+      });
+      toast.success(initial ? "Cours modifié." : "Cours ajouté à l'emploi du temps.");
+      onDone();
+    } catch (err) {
+      toast.error(
+        err instanceof Error && !err.message.startsWith("{")
+          ? err.message
+          : "Enregistrement impossible.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!initial) return;
+    setRemoving(true);
+    try {
+      await remove({ slotId: initial._id });
+      toast.success("Cours supprimé de l'emploi du temps.");
+      onDone();
+    } catch {
+      toast.error("Suppression impossible.");
+      setRemoving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-day">Jour</Label>
+          <select
+            id="sl-day"
+            value={day}
+            onChange={(e) => setDay(e.target.value)}
+            className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+          >
+            {DAYS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-room">Salle</Label>
+          <Input
+            id="sl-room"
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            placeholder="B204"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-start">Début</Label>
+          <Input
+            id="sl-start"
+            type="time"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-end">Fin</Label>
+          <Input
+            id="sl-end"
+            type="time"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            required
+          />
+          {day === "Mercredi" && end > "12:10" && (
+            <p className="text-xs text-destructive">
+              Le mercredi, les cours s'arrêtent au plus tard à 12:10.
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="sl-subject">Matière</Label>
+        <Input
+          id="sl-subject"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="Mathématiques"
+          list="subjects-list"
+          required
+        />
+        <datalist id="subjects-list">
+          {COMMON_SUBJECTS.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+        <p className="text-xs text-muted-foreground">
+          La couleur de la case suit automatiquement la matière (EPS : sans devoirs).
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Semaine</Label>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {(
+            [
+              ["AB", "Toutes"],
+              ["A", "Semaine A"],
+              ["B", "Semaine B"],
+            ] as const
+          ).map(([w, label]) => (
+            <Button
+              key={w}
+              type="button"
+              variant={weekType === w ? "default" : "ghost"}
+              size="sm"
+              className="flex-1 rounded-none"
+              onClick={() => setWeekType(w)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="sl-teacher">Professeur</Label>
+        <Input
+          id="sl-teacher"
+          value={teacher}
+          onChange={(e) => setTeacher(e.target.value)}
+          placeholder="Mme Bernard"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" className="flex-1" disabled={saving}>
+          {saving ? "Enregistrement…" : initial ? "Enregistrer" : "Ajouter le cours"}
+        </Button>
+        {initial && (
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={removing}
+          >
+            <Trash2 className="size-4 mr-1.5" />
+            {removing ? "…" : "Supprimer"}
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+}
 
 function AddSlotDialog({
   open,
@@ -610,104 +1046,42 @@ function AddSlotDialog({
   classId: Id<"classes">;
   canEdit: boolean;
 }) {
-  const upsert = useMutation(api.app.upsertSlot);
-  const [day, setDay] = useState<string>("Lundi");
-  const [start, setStart] = useState("08:00");
-  const [end, setEnd] = useState("09:00");
-  const [subject, setSubject] = useState("");
-  const [teacher, setTeacher] = useState("");
-  const [room, setRoom] = useState("");
-  const [weekType, setWeekType] = useState<"A" | "B" | "AB">("AB");
-  const [saving, setSaving] = useState(false);
-
   if (!canEdit) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await upsert({
-        classId,
-        day: day as (typeof DAYS)[number],
-        start,
-        end,
-        subject: subject.trim(),
-        teacher: teacher.trim() || undefined,
-        room: room.trim() || undefined,
-        weekType,
-      });
-      toast.success("Cours ajouté à l'emploi du temps.");
-      onOpenChange(false);
-      setSubject("");
-      setTeacher("");
-      setRoom("");
-    } catch {
-      toast.error("Ajout impossible (horaires invalides ?).");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="panel border-border/80 max-w-md">
+      <DialogContent className="panel border-border/80 max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Ajouter un cours</DialogTitle>
-          <DialogDescription>Créneau de l'emploi du temps de la classe.</DialogDescription>
+          <DialogDescription>
+            Créneau de l'emploi du temps de la classe.
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="sl-day">Jour</Label>
-              <select
-                id="sl-day"
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
-                className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
-              >
-                {DAYS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="sl-room">Salle</Label>
-              <Input id="sl-room" value={room} onChange={(e) => setRoom(e.target.value)} placeholder="B204" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="sl-start">Début</Label>
-              <Input id="sl-start" type="time" value={start} onChange={(e) => setStart(e.target.value)} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="sl-end">Fin</Label>
-              <Input id="sl-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sl-subject">Matière</Label>
-            <Input id="sl-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Mathématiques" required />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sl-week">Semaine</Label>
-            <select
-              id="sl-week"
-              value={weekType}
-              onChange={(e) => setWeekType(e.target.value as "A" | "B" | "AB")}
-              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
-            >
-              <option value="AB">Toutes les semaines (A et B)</option>
-              <option value="A">Semaine A uniquement</option>
-              <option value="B">Semaine B uniquement</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sl-teacher">Professeur</Label>
-            <Input id="sl-teacher" value={teacher} onChange={(e) => setTeacher(e.target.value)} placeholder="Mme Bernard" />
-          </div>
-          <Button type="submit" className="w-full" disabled={saving}>
-            {saving ? "Ajout…" : "Ajouter le cours"}
-          </Button>
-        </form>
+        <SlotForm classId={classId} onDone={() => onOpenChange(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditSlotDialog({
+  slot,
+  classId,
+  onDone,
+}: {
+  slot: Slot | null;
+  classId: Id<"classes">;
+  onDone: () => void;
+}) {
+  if (!slot) return null;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onDone()}>
+      <DialogContent className="panel border-border/80 max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Modifier le cours</DialogTitle>
+          <DialogDescription>
+            {slot.day} · {slot.start}–{slot.end} — {slot.subject}
+          </DialogDescription>
+        </DialogHeader>
+        <SlotForm classId={classId} initial={slot} onDone={onDone} />
       </DialogContent>
     </Dialog>
   );

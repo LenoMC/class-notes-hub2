@@ -49,16 +49,22 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     redirectAfterAuth,
   );
 
-  const initialMode = searchParams.get("mode") === "signup" ? "signUp" : "signIn";
+  const initialRaw = searchParams.get("mode");
+  const initialMode: Mode =
+    initialRaw === "signup" ? "signUp" : initialRaw === "forgot" ? "forgot" : "signIn";
   const [mode, setMode] = useState<Mode>(initialMode);
   const [pendingEmail, setPendingEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Redirection automatique seulement hors flux « mot de passe oublié » :
+  // un utilisateur connecté peut venir ici changer son mot de passe.
   useEffect(() => {
-    if (!authLoading && isAuthenticated) navigate(redirect, { replace: true });
-  }, [authLoading, isAuthenticated, navigate, redirect]);
+    if (!authLoading && isAuthenticated && mode !== "forgot" && mode !== "reset") {
+      navigate(redirect, { replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate, redirect, mode]);
 
   const mapError = (err: unknown, fallback: string) =>
     err instanceof Error && err.message && !err.message.startsWith("{")

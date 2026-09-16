@@ -23,12 +23,16 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { optionRuleError } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
+  CalendarOff,
   CalendarPlus,
   Check,
+  CheckCircle2,
   Pencil,
   Plus,
+  RefreshCw,
   Shield,
   Trash2,
   UserCog,
@@ -38,8 +42,15 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
-const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
+const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
 const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+
+type WeekState = {
+  week: "A" | "B";
+  isHoliday: boolean;
+  holidayLabel: string | null;
+  nextSchoolMonday: string | null;
+};
 
 export default function Admin() {
   const { user } = useAuth();
@@ -67,7 +78,8 @@ export default function Admin() {
     <AppShell isAdmin>
       <h1 className="text-2xl font-semibold tracking-tight mb-1">Administration</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Classes prédéfinies, emplois du temps et comptes utilisateurs.
+        Classes prédéfinies, emplois du temps, comptes utilisateurs et calendrier
+        scolaire.
       </p>
       <Tabs defaultValue="classes" className="space-y-4">
         <TabsList className="bg-secondary/60">
@@ -80,6 +92,9 @@ export default function Admin() {
           <TabsTrigger value="users" className="gap-1.5">
             <Users className="size-4" /> Utilisateurs
           </TabsTrigger>
+          <TabsTrigger value="holidays" className="gap-1.5">
+            <CalendarOff className="size-4" /> Vacances & semaines
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="classes">
@@ -90,6 +105,9 @@ export default function Admin() {
         </TabsContent>
         <TabsContent value="users">
           <UsersTab />
+        </TabsContent>
+        <TabsContent value="holidays">
+          <HolidaysTab />
         </TabsContent>
       </Tabs>
     </AppShell>
@@ -247,6 +265,8 @@ function TimetableAdminTab() {
         <CardTitle className="text-lg">Emploi du temps par classe</CardTitle>
         <CardDescription>
           Choisissez une classe puis gérez ses créneaux, semaine A et semaine B.
+          Pas de cours le week-end ; le mercredi, les cours s'arrêtent au plus tard
+          à 12:10.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -281,6 +301,24 @@ function TimetableAdminTab() {
   );
 }
 
+const COMMON_SUBJECTS = [
+  "Français",
+  "Mathématiques",
+  "Histoire-Géographie",
+  "Anglais",
+  "Espagnol",
+  "Allemand",
+  "Physique-Chimie",
+  "SVT",
+  "Technologie",
+  "EPS",
+  "Arts Plastiques",
+  "Musique",
+  "Latin",
+  "LCE",
+  "Vie de classe",
+];
+
 function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
   const [week, setWeek] = useState<"A" | "B" | "AB">("AB");
   const slots = useQuery(api.app.listSlots, { classId, week: week === "AB" ? undefined : week });
@@ -313,8 +351,12 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
       setSubject("");
       setTeacher("");
       setRoom("");
-    } catch {
-      toast.error("Ajout impossible (horaires invalides ?).");
+    } catch (err) {
+      toast.error(
+        err instanceof Error && !err.message.startsWith("{")
+          ? err.message
+          : "Ajout impossible.",
+      );
     } finally {
       setSaving(false);
     }
@@ -358,24 +400,51 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           <div className="space-y-1.5">
             <Label htmlFor="adm-end">Fin</Label>
             <Input id="adm-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />
+            {day === "Mercredi" && end > "12:10" && (
+              <p className="text-xs text-destructive">
+                Le mercredi, les cours s'arrêtent au plus tard à 12:10.
+              </p>
+            )}
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="adm-week">Semaine</Label>
-          <select
-            id="adm-week"
-            value={weekType}
-            onChange={(e) => setWeekType(e.target.value as "A" | "B" | "AB")}
-            className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
-          >
-            <option value="AB">Toutes les semaines (A et B)</option>
-            <option value="A">Semaine A uniquement</option>
-            <option value="B">Semaine B uniquement</option>
-          </select>
+          <Label>Semaine (cochez A ou B)</Label>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(
+              [
+                ["AB", "Toutes"],
+                ["A", "Semaine A"],
+                ["B", "Semaine B"],
+              ] as const
+            ).map(([w, label]) => (
+              <Button
+                key={w}
+                type="button"
+                variant={weekType === w ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 rounded-none"
+                onClick={() => setWeekType(w)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="adm-subject">Matière</Label>
-          <Input id="adm-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Mathématiques" required />
+          <Input
+            id="adm-subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Mathématiques"
+            list="adm-subjects"
+            required
+          />
+          <datalist id="adm-subjects">
+            {COMMON_SUBJECTS.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="adm-teacher">Professeur</Label>
@@ -475,14 +544,18 @@ function UsersTab() {
       isClassAdmin?: boolean;
       adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
-      options?: (typeof OPTIONS)[number][];
+      options?: string[];
     },
   ) => {
     try {
       await update({ userId, ...patch });
       toast.success("Utilisateur mis à jour.");
-    } catch {
-      toast.error("Mise à jour impossible.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error && !err.message.startsWith("{")
+          ? err.message
+          : "Mise à jour impossible.",
+      );
     }
   };
 
@@ -533,7 +606,7 @@ function UserRow({
       isClassAdmin?: boolean;
       adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
-      options?: (typeof OPTIONS)[number][];
+      options?: string[];
     },
   ) => void;
 }) {
@@ -542,13 +615,7 @@ function UserRow({
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const toggleOption = (opt: (typeof OPTIONS)[number]) => {
-    const next = u.options.includes(opt)
-      ? u.options.filter((o) => o !== opt)
-      : [...u.options, opt];
-    onUpdate(u._id, { options: next });
-  };
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -584,9 +651,23 @@ function UserRow({
         </div>
         <div className="flex items-center gap-2 text-xs flex-wrap">
           {u.className && <Badge variant="outline">{u.className}</Badge>}
-          {u.options.map((o) => (
-            <Badge key={o} variant="outline">{o}</Badge>
-          ))}
+          {u.options.length > 0 ? (
+            u.options.map((o) => (
+              <Badge key={o} variant="outline">{o}</Badge>
+            ))
+          ) : (
+            <Badge variant="outline" className="text-amber-300 border-amber-400/40">
+              aucune option
+            </Badge>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setOptionsOpen(true)}
+          >
+            Options…
+          </Button>
           <Button variant="ghost" size="icon" className="size-8" onClick={() => setEditing((v) => !v)} title="Modifier">
             {editing ? <X className="size-4" /> : <Pencil className="size-4" />}
           </Button>
@@ -621,26 +702,6 @@ function UserRow({
               ))}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <Label>Options suivies (plusieurs possibles)</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {OPTIONS.map((o) => (
-                <button
-                  key={o}
-                  type="button"
-                  onClick={() => toggleOption(o)}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer",
-                    u.options.includes(o)
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-secondary/50 hover:border-primary/50",
-                  )}
-                >
-                  {o}
-                </button>
-              ))}
-            </div>
-          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <div className="flex flex-wrap gap-4">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -657,7 +718,6 @@ function UserRow({
                   checked={u.isClassAdmin}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      // À la promotion, demander la classe gérée : elle s'affiche ci-dessous
                       onUpdate(u._id, {
                         isClassAdmin: true,
                         adminOfClassId: u.adminOfClassId ?? u.classId ?? null,
@@ -696,6 +756,17 @@ function UserRow({
         </div>
       )}
 
+      <OptionsDialog
+        open={optionsOpen}
+        onOpenChange={setOptionsOpen}
+        current={u.options}
+        userName={u.name || u.email || "cet utilisateur"}
+        onSave={(next) => {
+          onUpdate(u._id, { options: next });
+          setOptionsOpen(false);
+        }}
+      />
+
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="panel border-border/80 max-w-sm">
           <DialogHeader>
@@ -716,6 +787,316 @@ function UserRow({
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ---------- Popup d'options (règles : LV2 obligatoire, max 3) ----------
+
+function OptionsDialog({
+  open,
+  onOpenChange,
+  current,
+  userName,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  current: string[];
+  userName: string;
+  onSave: (options: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(current);
+
+  // Resynchronise à chaque ouverture
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open && !wasOpen) {
+    setSelected(current);
+    setWasOpen(true);
+  } else if (!open && wasOpen) {
+    setWasOpen(false);
+  }
+
+  const ruleError = optionRuleError(selected);
+
+  const toggle = (opt: string) => {
+    setSelected((prev) => {
+      if (prev.includes(opt)) return prev.filter((o) => o !== opt);
+      if (prev.length >= 3) return prev;
+      // Interdiction Allemand + Espagnol ensemble : remplace l'autre LV2
+      if (opt === "Allemand" && prev.includes("Espagnol")) {
+        return prev.filter((o) => o !== "Espagnol").concat("Allemand");
+      }
+      if (opt === "Espagnol" && prev.includes("Allemand")) {
+        return prev.filter((o) => o !== "Allemand").concat("Espagnol");
+      }
+      return [...prev, opt];
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="panel border-border/80 max-w-md">
+        <DialogHeader>
+          <DialogTitle>Options de {userName}</DialogTitle>
+          <DialogDescription>
+            Au moins une langue : <strong>Allemand</strong> ou <strong>Espagnol</strong>{" "}
+            (jamais les deux). <strong>LCE</strong> et <strong>Latin</strong> se
+            cumulent avec l'une des deux langues. 3 options maximum.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-2">
+          {OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle(opt)}
+              className={cn(
+                "flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all",
+                selected.includes(opt)
+                  ? "border-primary bg-primary/10 text-primary glow-ring-soft"
+                  : "border-border bg-secondary/40 hover:border-primary/50",
+              )}
+            >
+              {selected.includes(opt) && <CheckCircle2 className="size-3.5" />}
+              {opt}
+            </button>
+          ))}
+        </div>
+        {ruleError && <p className="text-xs text-destructive">{ruleError}</p>}
+        <p className="text-xs text-muted-foreground">
+          {selected.length}/3 option{selected.length > 1 ? "s" : ""} sélectionnée
+          {selected.length > 1 ? "s" : ""}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            className="flex-1"
+            disabled={!!ruleError}
+            onClick={() => onSave(selected)}
+          >
+            Enregistrer
+          </Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Annuler
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Onglet Vacances & alternance A/B ----------
+
+function HolidaysTab() {
+  const weekState = useQuery(api.app.weekState) as WeekState | undefined;
+  const anchor = useQuery(api.app.getWeekAnchor);
+  const holidays = useQuery(api.app.listHolidays);
+  const setAnchor = useMutation(api.app.setWeekAnchor);
+  const addHoliday = useMutation(api.app.addHoliday);
+  const deleteHoliday = useMutation(api.app.deleteHoliday);
+
+  const [anchorDate, setAnchorDate] = useState("");
+  const [label, setLabel] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [savingAnchor, setSavingAnchor] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  const handleSaveAnchor = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) {
+      toast.error("Indiquez une date valide (AAAA-MM-JJ).");
+      return;
+    }
+    setSavingAnchor(true);
+    try {
+      await setAnchor({ startDay: anchorDate });
+      toast.success("Semaine de référence enregistrée.");
+      setAnchorDate("");
+    } catch {
+      toast.error("Enregistrement impossible.");
+    } finally {
+      setSavingAnchor(false);
+    }
+  };
+
+  const handleAddHoliday = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!start || !end || end < start) {
+      toast.error("Dates de vacances invalides.");
+      return;
+    }
+    setAdding(true);
+    try {
+      await addHoliday({ label: label.trim() || "Vacances", startDay: start, endDay: end });
+      toast.success("Période de vacances ajoutée : l'alternance s'arrête pendant cette période.");
+      setLabel("");
+      setStart("");
+      setEnd("");
+    } catch {
+      toast.error("Ajout impossible.");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDeleteHoliday = async (id: Id<"holidays">) => {
+    try {
+      await deleteHoliday({ holidayId: id });
+      toast.success("Période supprimée.");
+    } catch {
+      toast.error("Suppression impossible.");
+    }
+  };
+
+  const formatDay = (day: string | null | undefined) => {
+    if (!day) return "…";
+    const [y, m, d] = day.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("fr-FR", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    });
+  };
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card className="panel border-border/70">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <RefreshCw className="size-5 text-primary" /> Alternance des semaines A / B
+          </CardTitle>
+          <CardDescription>
+            Les semaines alternent automatiquement : A, B, A, B… L'alternance
+            s'arrête pendant les vacances et reprend où elle s'était arrêtée à la
+            rentrée suivante.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-border/70 bg-secondary/40 px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+              Semaine en cours
+            </p>
+            {weekState?.isHoliday ? (
+              <p className="text-lg font-semibold text-amber-300">
+                {weekState.holidayLabel ?? "Vacances"} — alternance en pause
+              </p>
+            ) : (
+              <p className="text-lg font-semibold">
+                Semaine <span className="text-primary font-mono">{weekState?.week ?? "…"}</span>
+                {weekState?.nextSchoolMonday && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    reprise le {formatDay(weekState.nextSchoolMonday)}
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="anchor-day">
+              Semaine de référence (un lundi situé sur une semaine A)
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="anchor-day"
+                type="date"
+                value={anchorDate || anchor?.startDay || ""}
+                onChange={(e) => setAnchorDate(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={handleSaveAnchor} disabled={savingAnchor} className="shrink-0">
+                {savingAnchor ? "…" : "Enregistrer"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Référence actuelle : semaine du {formatDay(anchor?.startDay)}.
+              Modifiez-la uniquement si le décompte est décalé.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="panel border-border/70">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CalendarOff className="size-5 text-primary" /> Périodes de vacances
+          </CardTitle>
+          <CardDescription>
+            Pendant une période de vacances, plus aucun cours n'est affiché et
+            l'alternance A/B est suspendue.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={handleAddHoliday} className="space-y-2 rounded-lg border border-border/70 bg-secondary/30 p-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="hol-label">Nom (ex. Vacances de la Toussaint)</Label>
+              <Input
+                id="hol-label"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Vacances d'hiver"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="hol-start">Du</Label>
+                <Input
+                  id="hol-start"
+                  type="date"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="hol-end">Au (inclus)</Label>
+                <Input
+                  id="hol-end"
+                  type="date"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={adding}>
+              {adding ? "Ajout…" : "Ajouter la période"}
+            </Button>
+          </form>
+
+          {!holidays ? (
+            <Skeleton className="h-20 w-full" />
+          ) : holidays.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Aucune période configurée. L'alternance A/B sera continue.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {holidays.map((h) => (
+                <div
+                  key={h._id}
+                  className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2"
+                >
+                  <CalendarOff className="size-4 text-amber-300 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{h.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Du {formatDay(h.startDay)} au {formatDay(h.endDay)}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={() => handleDeleteHoliday(h._id)}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
