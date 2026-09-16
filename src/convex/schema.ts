@@ -16,12 +16,19 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
-export const OPTION_VALUES = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+export const OPTION_VALUES = [
+  "LCE",
+  "Latin",
+  "Allemand",
+  "Espagnol",
+  "Sécurité Civile",
+] as const;
 export const optionValidator = v.union(
   v.literal("LCE"),
   v.literal("Latin"),
   v.literal("Allemand"),
   v.literal("Espagnol"),
+  v.literal("Sécurité Civile"),
 );
 export type OptionValue = (typeof OPTION_VALUES)[number];
 
@@ -67,7 +74,8 @@ const schema = defineSchema(
       isClassAdmin: v.optional(v.boolean()), // responsable (admin) de sa classe
       classId: v.optional(v.id("classes")),
       adminOfClassId: v.optional(v.id("classes")), // classe dont il est responsable
-      options: v.optional(v.array(optionValidator)), // options choisies (1 à 3)
+      options: v.optional(v.array(optionValidator)), // options choisies (1 à 4)
+      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // groupe du vendredi
       questionnaireDone: v.optional(v.boolean()),
     })
       .index("email", ["email"]) // index for the email. do not remove or modify
@@ -89,6 +97,7 @@ const schema = defineSchema(
       teacher: v.optional(v.string()),
       room: v.optional(v.string()),
       weekType: v.optional(weekTypeValidator), // A, B ou AB (défaut : AB)
+      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau spécial groupe (vendredi)
       color: v.optional(v.string()), // couleur de la case (hex), sinon couleur de la matière
       cancelled: v.optional(v.boolean()), // cours annulé par un admin
       cancellationReason: v.optional(v.string()),

@@ -133,11 +133,20 @@ export const COLOR_CHOICES: Array<{ name: string; hex: string }> = [
 ];
 
 /** Règles des options : au moins une LV2 (Allemand ou Espagnol), jamais les
- *  deux, 3 options maximum. LCE et Latin se cumulent avec l'une des deux LV2. */
+ *  deux, 4 options maximum. LCE, Latin et Sécurité Civile se cumulent avec
+ *  l'une des deux LV2. */
 export const OPTION_RULES = {
   min: 1,
-  max: 3,
+  max: 4,
 };
+
+export const ALL_OPTIONS = [
+  "LCE",
+  "Latin",
+  "Allemand",
+  "Espagnol",
+  "Sécurité Civile",
+] as const;
 
 export function optionRuleError(options: string[]): string | null {
   const hasA = options.includes("Allemand");
@@ -152,4 +161,31 @@ export function optionRuleError(options: string[]): string | null {
     return "Choisissez au moins une LV2 : Allemand ou Espagnol.";
   }
   return null;
+}
+
+/** Les matières option (LCE, Latin, Allemand, Espagnol, Sécurité Civile) ne
+ *  concernent que les élèves qui ont choisi l'option correspondante. Les
+ *  administrateurs globaux voient toutes les options. */
+export function visibleOptionsFor(
+  user: { isAdmin?: boolean; options?: string[] } | null | undefined,
+): string[] {
+  if (!user) return [];
+  if (user.isAdmin) return [...ALL_OPTIONS];
+  return user.options ?? [];
+}
+
+/** La matière d'un créneau correspond-elle à une option ? (ex. Latin) */
+export function subjectRequiresOption(subject: string): string | null {
+  const n = normalizeSubject(subject);
+  if (/lce|llc/.test(n)) return "LCE";
+  if (/latin|lca/.test(n)) return "Latin";
+  if (/allemand|german/.test(n)) return "Allemand";
+  if (/espagnol|spanish/.test(n)) return "Espagnol";
+  if (/securite\s*civile/.test(n)) return "Sécurité Civile";
+  return null;
+}
+
+/** L'EPS et la Sécurité Civile peuvent occuper plusieurs créneaux d'affilée. */
+export function canSpanPeriods(subject: string): boolean {
+  return isEpsSubject(subject) || /securite\s*civile/.test(normalizeSubject(subject));
 }

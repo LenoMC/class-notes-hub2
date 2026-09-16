@@ -30,7 +30,12 @@ import {
   slotStyle,
   subjectStyle,
 } from "@/lib/subjects";
-import { PERIODS, periodLabel, periodsForDay } from "@/lib/periods";
+import {
+  PAUSES,
+  PERIODS,
+  periodLabel,
+  periodsForDay,
+} from "@/lib/periods";
 import { formatDayFr } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -278,37 +283,41 @@ function TimetableGrid({
                   gridTemplateRows: `repeat(${PERIODS.length}, minmax(84px, auto))`,
                 }}
               >
-                {/* Étiquettes des créneaux (horaires fixes) */}
-                {PERIODS.map((p, i) => (
-                  <div
-                    key={p.id}
-                    style={{ gridRow: i + 1, gridColumn: 1 }}
-                    className="flex items-center justify-end pr-1"
-                  >
-                    <span className="font-mono text-[10px] leading-tight text-muted-foreground text-right">
-                      {periodLabel(p.start, p.end)}
-                    </span>
-                  </div>
-                ))}
+                {/* Étiquettes des créneaux : heures empilées à la verticale
+                    (début en haut, fin en bas), pauses signalées entre deux
+                    créneaux (récréation, déjeuner). */}
+                {PERIODS.map((p, i) => {
+                  const pause = PAUSES.find((pa) => pa.after === PERIODS[i - 1]?.id);
+                  return (
+                    <div
+                      key={p.id}
+                      style={{ gridRow: i + 1, gridColumn: 1 }}
+                      className="flex flex-col items-end justify-between pr-1.5 py-1.5"
+                    >
+                      {pause && (
+                        <span className="text-[8px] uppercase tracking-widest text-amber-300/90 font-semibold">
+                          {pause.label}
+                        </span>
+                      )}
+                      <span className="font-mono text-[11px] font-bold leading-none">
+                        {p.start}
+                      </span>
+                      <span className="font-mono text-[10px] leading-none text-muted-foreground">
+                        {p.end}
+                      </span>
+                    </div>
+                  );
+                })}
 
                 {/* Cellules de fond (toutes les cases jour/créneau) */}
                 {PERIODS.map((p, i) =>
-                  DAYS.map((day, di) => {
-                    const indispo = p.mercrediOnly && day !== "Mercredi";
-                    return (
-                      <div
-                        key={`bg-${p.id}-${day}`}
-                        style={{ gridRow: i + 1, gridColumn: di + 2 }}
-                        className={cn(
-                          "rounded-xl border p-1.5",
-                          indispo
-                            ? "border-dashed border-border/25"
-                            : "border-border/40 bg-secondary/25",
-                          p.mercrediOnly && !indispo && "bg-secondary/10",
-                        )}
-                      />
-                    );
-                  }),
+                  DAYS.map((day, di) => (
+                    <div
+                      key={`bg-${p.id}-${day}`}
+                      style={{ gridRow: i + 1, gridColumn: di + 2 }}
+                      className="rounded-xl border border-border/40 bg-secondary/25 p-1.5"
+                    />
+                  )),
                 )}
 
                 {/* Cours : placés sur leur case de départ, avec fusion verticale */}
