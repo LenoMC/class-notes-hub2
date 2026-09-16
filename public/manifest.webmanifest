@@ -1,7 +1,7 @@
 {
-  "name": "freebuff.com application",
-  "short_name": "freebuff.com",
-  "description": "freebuff.com application",
+  "name": "Class Notes",
+  "short_name": "Class Notes",
+  "description": "Cours, devoirs et emploi du temps de votre classe.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

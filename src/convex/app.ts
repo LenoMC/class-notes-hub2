@@ -215,6 +215,29 @@ export const upsertSlot = mutation({
   },
 });
 
+// Annulation / rétablissement d'un cours (admin global ou admin de la classe)
+export const setSlotCancelled = mutation({
+  args: {
+    slotId: v.id("timetableSlots"),
+    cancelled: v.boolean(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { slotId, cancelled, reason }) => {
+    const user = await requireUser(ctx);
+    const slot = await ctx.db.get(slotId);
+    if (!slot) throw new Error("Créneau introuvable");
+    if (!user.isAdmin && !(user.isClassAdmin && user.classId === slot.classId)) {
+      throw new Error("Réservé aux admins");
+    }
+    await ctx.db.patch(slotId, {
+      cancelled: cancelled || undefined,
+      ...(cancelled
+        ? { cancellationReason: reason?.trim() || undefined }
+        : { cancellationReason: undefined }),
+    });
+  },
+});
+
 export const deleteSlot = mutation({
   args: { slotId: v.id("timetableSlots") },
   handler: async (ctx, { slotId }) => {

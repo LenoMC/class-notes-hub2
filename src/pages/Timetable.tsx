@@ -25,13 +25,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
+  Ban,
+  CalendarX2,
   Download,
   ExternalLink,
   FileUp,
   Link2,
   Plus,
+  RotateCcw,
   Trash2,
-  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -48,6 +50,8 @@ type Slot = {
   subject: string;
   teacher?: string;
   room?: string;
+  cancelled?: boolean;
+  cancellationReason?: string;
 };
 
 export default function Timetable() {
@@ -126,13 +130,12 @@ function TimetableGrid({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Emploi du temps</h1>
-          <p className="text-sm text-muted-foreground">
-            Clique sur un cours pour voir ses cours et devoirs.
-          </p>
-        </div>
+      <div className="flex items-center justify-between mb-4">          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
+            <p className="text-sm text-muted-foreground">
+              Sélectionnez un cours pour consulter ses documents.
+            </p>
+          </div>
         {canEdit && (
           <Button className="gap-1.5" onClick={() => setShowAdd(true)}>
             <Plus className="size-4" /> Ajouter un cours
@@ -180,13 +183,16 @@ function TimetableGrid({
                           onClick={() => onOpen(slot)}
                           style={{ top: top + 2, height }}
                           className={cn(
-                            "absolute left-1 right-1 rounded-lg border px-2 py-1 text-left overflow-hidden transition-all cursor-pointer hover:z-10 hover:scale-[1.02] glow-ring-soft",
-                            "border-primary/40 bg-primary/10 hover:bg-primary/15",
+                            "absolute left-1 right-1 rounded-lg border px-2 py-1 text-left overflow-hidden transition-all cursor-pointer hover:z-10 hover:scale-[1.02]",
+                            slot.cancelled
+                              ? "border-destructive/50 bg-destructive/10 line-through decoration-destructive/60"
+                            : "border-primary/40 bg-primary/10 hover:bg-primary/15 glow-ring-soft",
                             dayIdx >= 5 && "opacity-80",
                           )}
                         >
                           <p className="text-xs font-semibold truncate">{slot.subject}</p>
                           <p className="text-[10px] text-muted-foreground truncate">
+                            {slot.cancelled ? "Annulé · " : ""}
                             {slot.start}–{slot.end}
                             {slot.room ? ` · ${slot.room}` : ""}
                           </p>
@@ -219,8 +225,9 @@ type FileRow = {
   description: string | null;
   fileName: string;
   fileType: string;
-  bytes: number | null;      hasFile: boolean;
-      storageId: Id<"_storage"> | null;
+  bytes: number | null;
+  hasFile: boolean;
+  storageId: Id<"_storage"> | null;
   externalUrl: string | null;
 };
 
@@ -234,7 +241,32 @@ function SlotDialog({
   onClose: () => void;
 }) {
   const files = useQuery(api.app.listFilesForSlot, { slotId: slot._id });
+  const setCancelled = useMutation(api.app.setSlotCancelled);
   const [showUpload, setShowUpload] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+  const [reason, setReason] = useState("");
+  const [working, setWorking] = useState(false);
+
+  const handleCancelToggle = async () => {
+    setWorking(true);
+    try {
+      await setCancelled({
+        slotId: slot._id,
+        cancelled: !slot.cancelled,
+        reason: reason.trim() || undefined,
+      });
+      toast.success(
+        slot.cancelled
+          ? "Cours rétabli dans l'emploi du temps."
+          : "Cours marqué comme annulé.",
+      );
+      onClose();
+    } catch {
+      toast.error("Action impossible.");
+    } finally {
+      setWorking(false);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -242,7 +274,14 @@ function SlotDialog({
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="text-xl">{slot.subject}</DialogTitle>
+              <DialogTitle className="text-xl flex items-center gap-2 flex-wrap">
+                {slot.subject}
+                {slot.cancelled && (
+                  <Badge className="bg-destructive/15 text-destructive border border-destructive/40 gap-1">
+                    <Ban className="size-3" /> Annulé
+                  </Badge>
+                )}
+              </DialogTitle>
               <DialogDescription>
                 {slot.day} · {slot.start}–{slot.end}
                 {slot.teacher ? ` · ${slot.teacher}` : ""}
@@ -250,18 +289,25 @@ function SlotDialog({
               </DialogDescription>
             </div>
             <Badge variant="secondary" className="glow-ring-soft shrink-0">
-              <Zap className="size-3 text-primary mr-1" />
+              <CalendarX2 className="size-3 text-primary mr-1" />
               {files?.length ?? 0} fichier{(files?.length ?? 0) > 1 ? "s" : ""}
             </Badge>
           </div>
         </DialogHeader>
+
+        {slot.cancelled && slot.cancellationReason && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Motif de l'annulation : {slot.cancellationReason}
+          </div>
+        )}
 
         <div className="space-y-2">
           {!files ? (
             <Skeleton className="h-20 w-full" />
           ) : files.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Aucun fichier pour ce cours{canEdit ? " — ajoute le premier !" : " pour l'instant."}
+              Aucun fichier pour ce cours
+              {canEdit ? " — publiez le premier document." : " pour l'instant."}
             </p>
           ) : (
             files.map((f) => <FileCard key={f._id} file={f as FileRow} canEdit={canEdit} />)
@@ -269,13 +315,72 @@ function SlotDialog({
         </div>
 
         {canEdit && (
-          <Button className="w-full gap-2" onClick={() => setShowUpload((v) => !v)}>
-            <FileUp className="size-4" />
+          <Button className="w-full" onClick={() => setShowUpload((v) => !v)}>
+            <FileUp className="size-4 mr-1.5" />
             {showUpload ? "Fermer" : "Ajouter un fichier (cours ou devoir)"}
           </Button>
         )}
         {canEdit && showUpload && (
           <UploadForm slotId={slot._id} onDone={() => setShowUpload(false)} />
+        )}
+
+        {canEdit && (
+          <div className="border-t border-border/60 pt-3">
+            {!showCancel ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowCancel(true)}
+              >
+                {slot.cancelled ? (
+                  <>
+                    <RotateCcw className="size-4 mr-1.5" /> Rétablir ce cours
+                  </>
+                ) : (
+                  <>
+                    <Ban className="size-4 mr-1.5 text-destructive" /> Annuler ce cours
+                  </>
+                )}
+              </Button>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCancelToggle();
+                }}
+                className="space-y-2"
+              >
+                <Label htmlFor="cancel-reason">Motif (visible par la classe)</Label>
+                <Input
+                  id="cancel-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Professeur absent, sortie scolaire…"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="submit"
+                    variant={slot.cancelled ? "default" : "destructive"}
+                    className="flex-1"
+                    disabled={working}
+                  >
+                    {working
+                      ? "…"
+                      : slot.cancelled
+                        ? "Confirmer le rétablissement"
+                        : "Confirmer l'annulation"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowCancel(false)}
+                  >
+                    Retour
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
       </DialogContent>
     </Dialog>
@@ -408,14 +513,14 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
         storageId,
         externalUrl: externalUrl.trim() || undefined,
       });
-      toast.success("Publié ⚡ Les élèves le voient tout de suite.");
+      toast.success("Document publié. Il est visible par la classe immédiatement.");
       setTitle("");
       setDescription("");
       setFile(null);
       setExternalUrl("");
       onDone();
     } catch {
-      toast.error("Publication impossible. Vérifie le fichier.");
+      toast.error("Publication impossible. Vérifiez le fichier ou le lien.");
     } finally {
       setUploading(false);
     }
@@ -430,7 +535,7 @@ function UploadForm({ slotId, onDone }: { slotId: Id<"timetableSlots">; onDone: 
           onClick={() => setKind("devoir")}
           className="gap-1.5"
         >
-          <Zap className="size-4" /> Devoir
+          <CalendarX2 className="size-4" /> Devoir
         </Button>
         <Button
           type="button"
@@ -506,7 +611,7 @@ function AddSlotDialog({
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
       });
-      toast.success("Cours ajouté à l'emploi du temps ⚡");
+      toast.success("Cours ajouté à l'emploi du temps.");
       onOpenChange(false);
       setSubject("");
       setTeacher("");

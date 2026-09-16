@@ -5,51 +5,49 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import logo from "@/assets/logo.svg";
 import {
-  BookOpen,
   CalendarDays,
-  Download,
   FileCheck2,
-  LogOut,
+  FolderOpen,
   ShieldCheck,
-  Upload,
-  Users,
-  Zap,
+  Terminal,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQuery } from "convex/react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
 const FEATURES = [
   {
-    icon: CalendarDays,
-    title: "Emploi du temps cliquable",
-    text: "Chaque case de cours s'ouvre sur les documents partagés par les admins de ta classe.",
+    icon: FolderOpen,
+    title: "Un dépôt par classe",
+    text: "Fiches de cours, polycopiés, annales : chaque document est rattaché au bon créneau du planning.",
   },
   {
     icon: FileCheck2,
-    title: "Cours et devoirs au même endroit",
-    text: "Fiches de cours, exercices, devoirs à rendre : tout est rattaché au bon créneau.",
+    title: "Devoirs traçables",
+    text: "Chaque devoir porte sa consigne, son format et sa date. Plus de capture d'écran perdue dans un groupe de discussion.",
   },
   {
-    icon: Download,
-    title: "Téléchargement immédiat",
-    text: "Un clic et le fichier est à toi. Plus besoin de fouiller un groupe de discussion.",
+    icon: CalendarDays,
+    title: "Planning fiable",
+    text: "L'emploi du temps fait autorité. Un cours annulé est signalé comme tel, avec le motif.",
   },
   {
     icon: ShieldCheck,
-    title: "Admins globaux & par classe",
-    text: "Les admin globaux paramètrent le site ; les admins de classe publient les cours.",
+    title: "Rôles clairs",
+    text: "Les administrateurs globaux structurent le site et nomment les responsables de classe. Ceux-ci publient les contenus.",
   },
 ];
 
 export default function Landing() {
-  const { isLoading, isAuthenticated, user, signOut } = useAuth();
+  const { isLoading, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const classes = useQuery(api.app.listClasses) ?? [];
   const classCount = classes.length;
 
   const goToApp = () => navigate("/dashboard");
-  const goToAuth = () => navigate("/auth?returnTo=%2Fdashboard");
+  // Le CTA principal mène directement au formulaire d'inscription.
+  const goToSignUp = () => navigate("/auth?mode=signup&returnTo=%2Fdashboard");
+  const goToSignIn = () => navigate("/auth?returnTo=%2Fdashboard");
 
   return (
     <motion.div
@@ -62,67 +60,57 @@ export default function Landing() {
 
       {/* Header */}
       <header className="relative z-10 mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
-        <img src={logo} alt="Foudre" className="size-9 rounded-lg" />
-        <span className="text-lg font-bold tracking-tight">Foudre</span>
+        <img src={logo} alt="Class Notes" className="size-9 rounded-lg" />
+        <span className="text-lg font-semibold tracking-tight">Class Notes</span>
+        <span className="hidden sm:inline text-xs font-mono text-muted-foreground border border-border/70 rounded px-1.5 py-0.5">
+          v1
+        </span>
         <div className="ml-auto flex items-center gap-2">
           {isLoading ? null : isAuthenticated ? (
-            <>
-              <Button variant="ghost" onClick={goToApp}>
-                Mon espace
-              </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  await signOut();
-                }}
-              >
-                <LogOut className="size-4" />
-              </Button>
-            </>
+            <Button variant="outline" onClick={goToApp}>
+              Accéder à mon espace
+            </Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={goToAuth}>
+              <Button variant="ghost" onClick={goToSignIn}>
                 Se connecter
               </Button>
-              <Button className="gap-1.5" onClick={goToAuth}>
-                <Zap className="size-4" />
-                Rejoindre
-              </Button>
+              <Button onClick={goToSignUp}>Créer un compte</Button>
             </>
           )}
         </div>
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pt-16 pb-20 text-center">
-        <Badge variant="secondary" className="glow-ring-soft mb-6 gap-1.5 px-3 py-1.5 text-xs">
-          <Zap className="size-3.5 text-primary" />
-          Le hub des cours et devoirs de ta classe
+      <section className="relative z-10 mx-auto max-w-6xl px-4 pt-20 pb-24">
+        <Badge variant="secondary" className="glow-ring-soft mb-6 gap-1.5 px-3 py-1.5 text-xs font-mono">
+          <Terminal className="size-3.5 text-primary" />
+          cours · devoirs · emploi du temps
         </Badge>
-        <h1 className="text-4xl sm:text-6xl font-bold tracking-tight leading-[1.05]">
-          Tes cours tombent du ciel,{" "}
-          <span className="text-gradient-bolt animate-bolt-flicker">comme la foudre</span>
+        <h1 className="max-w-3xl text-4xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
+          La documentation de votre classe,{" "}
+          <span className="text-gradient-bolt">au même endroit</span>
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-          Foudre centralise l'emploi du temps, les fiches de cours et les devoirs de ta
-          classe. Inscris-toi, vérifie ton email, choisis ta classe — et tout apparaît.
+        <p className="mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground leading-relaxed">
+          Class Notes rassemble l'emploi du temps, les fiches de cours et les devoirs
+          de votre classe dans une interface sobre et fiable. Créez votre compte,
+          sélectionnez votre classe, et retrouvez chaque ressource à sa place.
         </p>
-        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Button size="lg" className="gap-2 glow-ring" onClick={goToAuth}>
-            <Zap className="size-4" />
-            Créer mon compte
+        <div className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <Button size="lg" className="glow-ring" onClick={goToSignUp}>
+            Créer un compte
           </Button>
-          <Button size="lg" variant="outline" onClick={goToAuth}>
-            J'ai déjà un compte
+          <Button size="lg" variant="outline" onClick={goToSignIn}>
+            Se connecter
           </Button>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">
-          Connexion par mot de passe · vérification email · mot de passe oublié
+        <p className="mt-4 text-xs font-mono text-muted-foreground">
+          inscription par email · vérification par code · réinitialisation de mot de passe
         </p>
       </section>
 
       {/* Features */}
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-20">
+      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map(({ icon: Icon, title, text }, i) => (
             <motion.div
@@ -134,7 +122,7 @@ export default function Landing() {
             >
               <Card className="panel h-full border-border/70">
                 <CardContent className="pt-6">
-                  <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary glow-ring-soft">
+                  <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Icon className="size-5" />
                   </div>
                   <h3 className="font-semibold">{title}</h3>
@@ -146,94 +134,69 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-20">
+      {/* Fonctionnement */}
+      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
         <Card className="panel border-border/70 overflow-hidden">
           <div className="grid lg:grid-cols-2 gap-8 p-8 lg:p-10 items-center">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Trois éclairs et c'est prêt
+              <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                Trois étapes, rien de plus
               </h2>
               <ol className="mt-6 space-y-4">
                 {[
-                  ["Inscris-toi", "Email + mot de passe, puis un code de vérification dans ta boîte."],
-                  ["Questionnaire", "Sélectionne ta classe et ton option : LCE, Latin, Allemand ou Espagnol."],
-                  ["Profite", "Ton emploi du temps s'affiche, les devoirs sont à un clic de téléchargement."],
+                  ["Créez votre compte", "Email et mot de passe, puis un code de vérification envoyé dans votre boîte."],
+                  ["Renseignez votre classe", "Un court questionnaire associe votre profil à votre classe et à votre option."],
+                  ["Accédez aux ressources", "Votre planning s'affiche ; chaque cours ouvre la liste de ses documents."],
                 ].map(([title, text], i) => (
                   <li key={title} className="flex gap-3">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-sm font-bold">
-                      {i + 1}
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary font-mono text-xs">
+                      {String(i + 1).padStart(2, "0")}
                     </span>
                     <div>
-                      <p className="font-semibold">{title}</p>
+                      <p className="font-medium">{title}</p>
                       <p className="text-sm text-muted-foreground">{text}</p>
                     </div>
                   </li>
                 ))}
               </ol>
             </div>
-            <div className="panel rounded-xl p-6 glow-ring-soft">
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
-                <span className="flex items-center gap-1.5">
-                  <CalendarDays className="size-3.5 text-primary" /> Aperçu EDT
-                </span>
-                <span>Lundi</span>
-              </div>
-              <div className="space-y-2.5">
-                {[
-                  ["08:00", "Mathématiques", "Mme Bernard", "2 devoirs"],
-                  ["09:00", "Histoire-géo", "M. Martin", "1 cours"],
-                  ["10:30", "Espagnol", "Sra. López", ""],
-                ].map(([time, subject, teacher, badge]) => (
-                  <div
-                    key={time}
-                    className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2.5"
-                  >
-                    <span className="font-mono text-xs text-primary">{time}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{subject}</p>
-                      <p className="truncate text-xs text-muted-foreground">{teacher}</p>
-                    </div>
-                    {badge && (
-                      <span className="flex items-center gap-1 text-xs text-primary">
-                        <FileCheck2 className="size-3.5" />
-                        {badge}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-                <Upload className="size-3.5" /> Déposé par les admins de classe
-                <BookOpen className="ml-2 size-3.5" /> Téléchargeable par tous
-              </div>
+            <div className="rounded-xl border border-border/70 bg-secondary/30 p-5 font-mono text-xs leading-6 overflow-x-auto">
+              <p className="text-muted-foreground">// aperçu d'un créneau</p>
+              <p>
+                <span className="text-primary">cours</span>{" "}
+                <span className="text-foreground">Lundi 08:00–09:00</span>
+              </p>
+              <p className="text-muted-foreground">matière: Mathématiques</p>
+              <p className="text-muted-foreground">salle: B204</p>
+              <p className="mt-2">
+                <span className="text-primary">devoirs</span>{" "}
+                <span className="text-foreground">DM n°3 — chapitre 4</span>
+              </p>
+              <p className="text-muted-foreground">statut: publié · 1 fichier · pdf</p>
+              <p className="mt-2 text-muted-foreground">$ class-notes open "DM n°3"</p>
+              <p className="text-foreground">→ téléchargement prêt</p>
             </div>
           </div>
         </Card>
       </section>
 
-      {/* Classes + CTA */}
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24 text-center">
-        {classCount > 0 && (
-          <p className="mb-6 text-sm text-muted-foreground">
-            <Users className="inline size-4 text-primary mr-1" />
-            {classCount} classe{classCount > 1 ? "s" : ""} déjà configurée{classCount > 1 ? "s" : ""} par les admins
-          </p>
-        )}
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-          Prêt à ne plus jamais rater un devoir ?
+      {/* CTA final */}
+      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-28 text-center">
+        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+          Prêt à rejoindre votre classe ?
         </h2>
-        <Button size="lg" className="mt-6 gap-2 glow-ring" onClick={goToAuth}>
-          <Zap className="size-4" />
-          Commencer maintenant
-        </Button>
-        <p className="mt-4 text-xs text-muted-foreground">
-          Un problème ? Contacte les délégués de ta classe.
+        <p className="mt-3 text-sm text-muted-foreground">
+          {classCount > 0
+            ? `${classCount} classe${classCount > 1 ? "s" : ""} déjà configurée${classCount > 1 ? "s" : ""} par les administrateurs.`
+            : "Les administrateurs configurent les classes ; les responsables publient les contenus."}
         </p>
+        <Button size="lg" className="mt-6 glow-ring" onClick={goToSignUp}>
+          Créer un compte
+        </Button>
       </section>
 
       <footer className="relative z-10 border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-        ⚡ Foudre — cours & devoirs, inspiré de podcast.freebuff.com
+        Class Notes — gestion de cours et de devoirs pour les classes
       </footer>
     </motion.div>
   );

@@ -54,7 +54,7 @@ const schema = defineSchema(
 
       role: v.optional(roleValidator), // role of the user. do not remove
 
-      // Champs applicatif Foudre
+      // Champs applicatif Class Notes
       isAdmin: v.optional(v.boolean()), // admin global du site
       isClassAdmin: v.optional(v.boolean()), // admin de sa classe
       classId: v.optional(v.id("classes")),
@@ -77,6 +77,8 @@ const schema = defineSchema(
       subject: v.string(),
       teacher: v.optional(v.string()),
       room: v.optional(v.string()),
+      cancelled: v.optional(v.boolean()), // cours annulé par un admin
+      cancellationReason: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_class", ["classId"]),
 

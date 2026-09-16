@@ -28,7 +28,6 @@ import {
   Shield,
   Sparkles,
   UserCog,
-  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -56,7 +55,7 @@ export default function Dashboard() {
   if (authLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
-        <Zap className="size-7 animate-pulse text-primary" />
+        <img src="/logo.svg" alt="Class Notes" className="size-10 animate-pulse rounded-lg" />
       </main>
     );
   }
@@ -98,7 +97,7 @@ function Questionnaire({ user }: { user: Me }) {
         classId,
         option: (option as (typeof OPTIONS)[number] | null) ?? null,
       });
-      toast.success("C'est enregistré ⚡ Bienvenue dans ta classe !");
+      toast.success("Préférences enregistrées. Bienvenue dans votre espace.");
     } catch {
       toast.error("Impossible d'enregistrer. Réessaie.");
     } finally {
@@ -113,11 +112,12 @@ function Questionnaire({ user }: { user: Me }) {
           <Sparkles className="size-6" />
         </div>
         <CardTitle className="text-2xl">
-          Bienvenue{user.name ? `, ${user.name.split(" ")[0]}` : ""} !
+          Bienvenue{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </CardTitle>
         <CardDescription>
-          Avant d'entrer, dis-nous où tu es : ta réponse débloque ton emploi du temps
-          personnalisé.
+          Avant de continuer, indiquez votre classe et votre option. Ces informations
+          déterminent votre emploi du temps et les ressources auxquelles vous aurez
+          accès.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -127,8 +127,8 @@ function Questionnaire({ user }: { user: Me }) {
           </p>
           {classes.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Aucune classe n'est encore configurée par les administrateurs. Reviens
-              plus tard !
+              Aucune classe n'est encore configurée par les administrateurs.
+              Revenez plus tard.
             </p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -188,13 +188,12 @@ function Questionnaire({ user }: { user: Me }) {
         </div>
 
         <Button
-          className="w-full gap-2 glow-ring"
+          className="w-full glow-ring"
           size="lg"
           onClick={handleSubmit}
           disabled={saving || !classId}
         >
-          <Zap className="size-4" />
-          {saving ? "Enregistrement…" : "Valider et entrer"}
+          {saving ? "Enregistrement…" : "Valider et continuer"}
         </Button>
       </CardContent>
     </Card>
@@ -205,25 +204,24 @@ function Questionnaire({ user }: { user: Me }) {
 
 function HomeHeader({ user, todayName }: { user: Me; todayName: string }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          {todayName} · {user.className ?? "Classe non définie"}
-          {user.option ? ` · Option ${user.option}` : ""}
-        </p>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Salut{user.name ? `, ${user.name.split(" ")[0]}` : ""} ⚡
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">        <div>
+          <p className="text-sm text-muted-foreground">
+            {todayName} · {user.className ?? "Classe non définie"}
+            {user.option ? ` · Option ${user.option}` : ""}
+          </p>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Bonjour{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </h1>
       </div>
       <div className="flex gap-2 items-center">
         {user.isClassAdmin && (
           <Badge variant="secondary" className="gap-1.5">
-            <UserCog className="size-3.5 text-primary" /> Admin de classe
+            <UserCog className="size-3.5 text-primary" /> Responsable de classe
           </Badge>
         )}
         {user.isAdmin && (
           <Badge variant="secondary" className="gap-1.5">
-            <Shield className="size-3.5 text-primary" /> Admin global
+            <Shield className="size-3.5 text-primary" /> Administrateur global
           </Badge>
         )}
         <Button asChild variant="outline">
@@ -253,7 +251,7 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
           <CalendarDays className="size-5 text-primary" /> Emploi du temps du jour
         </CardTitle>
         <CardDescription>
-          Clique sur un cours pour retrouver ses fichiers dans l'onglet EDT.
+          Sélectionnez un cours pour retrouver ses fichiers dans l'onglet EDT.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -263,7 +261,7 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
               <Hourglass className="size-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 {isWeekend
-                  ? "C'est le week-end, profite ! Aucun cours aujourd'hui."
+                  ? "C'est le week-end. Aucun cours programmé."
                   : "Aucun cours programmé aujourd'hui."}
               </p>
             </div>
@@ -297,7 +295,7 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
           )
         ) : (
           <p className="text-sm text-muted-foreground">
-            Aucune classe sélectionnée. Complète le questionnaire.
+            Aucune classe sélectionnée. Complétez le questionnaire ci-dessus.
           </p>
         )}
       </CardContent>
@@ -319,7 +317,7 @@ function RecentFiles({ files }: { files: ClassFiles | undefined }) {
         <CardTitle className="flex items-center gap-2 text-lg">
           <ClipboardList className="size-5 text-primary" /> Devoirs & fichiers récents
         </CardTitle>
-        <CardDescription>Les dernières publications de ta classe.</CardDescription>
+        <CardDescription>Les dernières publications de votre classe.</CardDescription>
       </CardHeader>
       <CardContent>
         {!files ? (
@@ -329,7 +327,8 @@ function RecentFiles({ files }: { files: ClassFiles | undefined }) {
           </div>
         ) : files.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Aucun fichier pour l'instant. Les admins de ta classe publieront ici.
+            Aucun fichier pour l'instant. Les responsables de votre classe publieront
+            leurs documents ici.
           </p>
         ) : (
           <div className="space-y-2">
@@ -377,19 +376,23 @@ function AdminsCard({ admins }: { admins: Admins | undefined }) {
     <Card className="panel border-border/70">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Shield className="size-5 text-primary" /> Les admins du site
+          <Shield className="size-5 text-primary" /> Administration du site
         </CardTitle>
-        <CardDescription>Ils gèrent les classes et les utilisateurs.</CardDescription>
+        <CardDescription>
+          Ils structurent le site, les classes et les comptes.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Admins globaux
+            Administrateurs globaux
           </p>
           {!admins ? (
             <Skeleton className="h-10 w-40" />
           ) : admins.globals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Aucun admin global.</p>
+            <p className="text-sm text-muted-foreground">
+              Aucun administrateur global pour le moment.
+            </p>
           ) : (
             <ul className="space-y-1.5">
               {admins.globals.map((a) => (
@@ -403,20 +406,20 @@ function AdminsCard({ admins }: { admins: Admins | undefined }) {
         </div>
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Admins de ta classe
+            Responsables de votre classe
           </p>
           {!admins ? (
             <Skeleton className="h-10 w-40" />
           ) : admins.classAdmins.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Aucun admin de classe pour le moment.
+              Aucun responsable nommé pour votre classe pour le moment.
             </p>
           ) : (
             <ul className="space-y-1.5">
               {admins.classAdmins.map((a) => (
                 <li key={a._id} className="flex items-center gap-2 text-sm">
                   <UserCog className="size-4 text-primary" />
-                  {a.name || a.email || "Admin de classe"}
+                  {a.name || a.email || "Responsable"}
                 </li>
               ))}
             </ul>

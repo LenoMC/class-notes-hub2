@@ -62,9 +62,9 @@ export default function Admin() {
 
   return (
     <AppShell isAdmin>
-      <h1 className="text-2xl font-bold tracking-tight mb-1">Administration</h1>
+      <h1 className="text-2xl font-semibold tracking-tight mb-1">Administration</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Classes prédéfinies, emploi du temps par classe et comptes utilisateurs.
+        Classes prédéfinies, emplois du temps et comptes utilisateurs.
       </p>
       <Tabs defaultValue="classes" className="space-y-4">
         <TabsList className="bg-secondary/60">
@@ -110,7 +110,7 @@ function ClassesTab() {
     if (!name.trim()) return;
     try {
       await create({ name: name.trim() });
-      toast.success(`Classe « ${name.trim()} » créée ⚡`);
+      toast.success(`Classe « ${name.trim()} » créée.`);
       setName("");
     } catch {
       toast.error("Création impossible.");
@@ -304,7 +304,7 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
       });
-      toast.success("Créneau ajouté ⚡");
+      toast.success("Créneau ajouté.");
       setSubject("");
       setTeacher("");
       setRoom("");
@@ -453,8 +453,8 @@ function UsersTab() {
           <UserCog className="size-5 text-primary" /> Utilisateurs
         </CardTitle>
         <CardDescription>
-          Modifie la classe, l'option et les droits. Le premier inscrit est admin
-          global.
+          Attribuez la classe, l'option et les responsabilités. Seuls les
+          administrateurs globaux nomment les responsables de classe.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -511,7 +511,7 @@ function UserRow({
             )}
             {u.isClassAdmin && !u.isAdmin && (
               <Badge variant="outline" className="text-[10px]">
-                admin de classe
+                responsable de classe
               </Badge>
             )}
           </div>
@@ -576,7 +576,7 @@ function UserRow({
               checked={u.isClassAdmin}
               onChange={(e) => onUpdate(u._id, { isClassAdmin: e.target.checked })}
             />
-            <UserCog className="size-4 text-primary" /> Admin de classe
+            <UserCog className="size-4 text-primary" /> Responsable de classe
           </label>
         </div>
       )}

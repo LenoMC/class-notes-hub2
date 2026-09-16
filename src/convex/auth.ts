@@ -21,12 +21,12 @@ function randomCode(): string {
 async function sendCodeEmail(email: string, token: string, kind: "verify" | "reset") {
   const subject =
     kind === "verify"
-      ? "Ton code de vérification Foudre"
-      : "Ton code de réinitialisation Foudre";
+      ? "Votre code de vérification Class Notes"
+      : "Votre code de réinitialisation Class Notes";
   const body =
     kind === "verify"
-      ? `Bienvenue sur Foudre ! Voici ton code de vérification : ${token}. Il expire dans 15 minutes.`
-      : `Voici ton code de réinitialisation de mot de passe : ${token}. Il expire dans 15 minutes.`;
+      ? `Bienvenue sur Class Notes. Votre code de vérification : ${token}. Il expire dans 15 minutes.`
+      : `Votre code de réinitialisation de mot de passe : ${token}. Il expire dans 15 minutes.`;
 
   try {
     await axios.post(

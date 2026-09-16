@@ -49,7 +49,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     redirectAfterAuth,
   );
 
-  const [mode, setMode] = useState<Mode>("signIn");
+  const initialMode = searchParams.get("mode") === "signup" ? "signUp" : "signIn";
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [pendingEmail, setPendingEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -85,7 +86,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         password,
       });
       if (result?.signingIn) {
-        toast.success("Connexion réussie ⚡");
+        toast.success("Connexion réussie.");
         navigate(redirect, { replace: true });
       } else {
         setError("Identifiants incorrects.");
@@ -145,7 +146,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         code,
       });
       if (result?.signingIn) {
-        toast.success("Email vérifié, bienvenue sur Foudre ⚡");
+        toast.success("Email vérifié. Bienvenue sur Class Notes.");
         navigate(redirect, { replace: true });
       } else {
         setError("Code incorrect ou expiré.");
@@ -168,7 +169,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       await signIn("password", { flow: "reset", email });
       setPendingEmail(email);
       go("reset");
-      toast.success("Code envoyé par email.");
+      toast.success("Code de réinitialisation envoyé par email.");
     } catch (err) {
       setError(
         mapError(err, "Impossible d'envoyer le code. Vérifie l'adresse."),
@@ -200,7 +201,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         newPassword,
       });
       if (result?.signingIn) {
-        toast.success("Mot de passe modifié ⚡");
+        toast.success("Mot de passe modifié.");
         navigate(redirect, { replace: true });
       } else {
         setError("Code incorrect ou expiré.");
@@ -223,10 +224,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <button onClick={goHome} className="flex justify-center cursor-pointer" aria-label="Accueil">
-                  <img src={logo} alt="Foudre" width={64} height={64} className="rounded-xl mb-3 mt-2" />
+                  <img src={logo} alt="Class Notes" width={64} height={64} className="rounded-xl mb-3 mt-2" />
                 </button>
-                <CardTitle className="text-xl">Bon retour !</CardTitle>
-                <CardDescription>Connecte-toi avec ton email et ton mot de passe</CardDescription>
+                <CardTitle className="text-xl">Connexion</CardTitle>
+                <CardDescription>Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
               </CardHeader>
               <form onSubmit={handleSignIn}>
                 <CardContent className="space-y-4">
@@ -252,14 +253,14 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
-                  <Button type="submit" className="w-full gap-2" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Se connecter
                   </Button>
                   <p className="text-sm text-muted-foreground">
                     Pas encore de compte ?{" "}
                     <button type="button" onClick={() => go("signUp")} className="text-primary hover:underline font-medium">
-                      S'inscrire
+                      Créer un compte
                     </button>
                   </p>
                 </CardFooter>
@@ -271,7 +272,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Créer un compte</CardTitle>
-                <CardDescription>Un code de vérification sera envoyé par email</CardDescription>
+                <CardDescription>Un code de vérification vous sera envoyé par email</CardDescription>
               </CardHeader>
               <form onSubmit={handleSignUp}>
                 <CardContent className="space-y-4">
@@ -303,8 +304,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
-                  <Button type="submit" className="w-full gap-2" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Créer mon compte
                   </Button>
                   <p className="text-sm text-muted-foreground">
@@ -324,7 +325,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <div className="flex justify-center mb-1">
                   <CheckCircle2 className="h-10 w-10 text-primary" />
                 </div>
-                <CardTitle>Vérifie ta boîte mail</CardTitle>
+                <CardTitle>Vérifiez votre boîte mail</CardTitle>
                 <CardDescription>
                   Un code à 6 chiffres a été envoyé à {pendingEmail}
                 </CardDescription>
@@ -358,7 +359,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Mot de passe oublié</CardTitle>
-                <CardDescription>Entre ton email pour recevoir un code de réinitialisation</CardDescription>
+                <CardDescription>Indiquez votre email pour recevoir un code de réinitialisation</CardDescription>
               </CardHeader>
               <form onSubmit={handleForgot}>
                 <CardContent className="space-y-4">
@@ -388,7 +389,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Nouveau mot de passe</CardTitle>
-                <CardDescription>Code envoyé à {pendingEmail}. Vérifie ta boîte mail.</CardDescription>
+                <CardDescription>Code envoyé à {pendingEmail}. Consultez votre boîte mail.</CardDescription>
               </CardHeader>
               <form onSubmit={handleReset}>
                 <CardContent className="space-y-4">
@@ -423,7 +424,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground border-t border-border/60">
             <Link to="/" className="hover:text-primary transition-colors">
-              ⚡ Foudre — les cours et devoirs de ta classe
+              Class Notes — cours, devoirs et emploi du temps
             </Link>
           </div>
         </Card>

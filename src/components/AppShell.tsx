@@ -11,13 +11,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, LogOut, Shield, Zap } from "lucide-react";
+import { CalendarDays, LayoutDashboard, LogOut, Shield } from "lucide-react";
 import { NavLink, useNavigate } from "react-router";
 import type { ReactNode } from "react";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Accueil", icon: LayoutDashboard },
-  { to: "/edt", label: "EDT", icon: Zap },
+  { to: "/edt", label: "EDT", icon: CalendarDays },
 ];
 
 export function AppShell({
@@ -48,12 +48,12 @@ export function AppShell({
       <header className="relative z-10 border-b border-border/60 backdrop-blur-sm sticky top-0 bg-background/80">
         <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-4">
           <NavLink to="/dashboard" className="shrink-0 cursor-pointer">
-            <img src="/logo.svg" alt="Foudre" className="size-9 rounded-lg" />
+            <img src="/logo.svg" alt="Class Notes" className="size-9 rounded-lg" />
           </NavLink>
           <div className="flex items-baseline gap-2 select-none">
-            <span className="text-lg font-bold tracking-tight">Foudre</span>
+            <span className="text-lg font-semibold tracking-tight">Class Notes</span>
             <span className="hidden sm:inline text-xs text-muted-foreground">
-              cours & devoirs
+              espace de classe
             </span>
           </div>
 
@@ -111,7 +111,7 @@ export function AppShell({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
-                  <div className="text-sm font-medium">{user?.name || "Élève"}</div>
+                  <div className="text-sm font-medium">{user?.name || "Utilisateur"}</div>
                   <div className="text-xs text-muted-foreground font-normal truncate">
                     {user?.email}
                   </div>
@@ -121,7 +121,7 @@ export function AppShell({
                   <LayoutDashboard className="mr-2 size-4" /> Accueil
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/edt")} className="sm:hidden">
-                  <Zap className="mr-2 size-4" /> EDT
+                  <CalendarDays className="mr-2 size-4" /> EDT
                 </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem
@@ -144,7 +144,7 @@ export function AppShell({
       </header>
       <main className="relative z-10 mx-auto max-w-6xl px-4 py-8">{children}</main>
       <footer className="relative z-10 border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
-        ⚡ Foudre — propulsé par les délégués de ta classe
+        Class Notes — votre classe, documentée.
       </footer>
     </div>
   );
