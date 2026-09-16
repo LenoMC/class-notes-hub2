@@ -931,9 +931,15 @@ function SlotForm({
   const dayPeriods = periodsForDay(day);
   const startPeriod =
     dayPeriods.find((p) => p.start === periodStart) ?? dayPeriods[0];
-  // Un cours peut chevaucher plusieurs créneaux : fin = n'importe quelle fin
-  // de créneau postérieure au début (ex. EPS de 10:20 à 12:10).
-  const endOptions = dayPeriods.filter((p) => p.end > periodStart);
+  // Un cours occupe UN seul créneau fixe. Seule l'EPS peut chevaucher
+  // plusieurs créneaux (ex. EPS de 10:20 à 12:10) : le champ Fin est alors
+  // débloqué, sinon il est verrouillé sur la fin du créneau choisi.
+  const isEps = isEpsSubject(subject);
+  const endOptions = isEps
+    ? dayPeriods.filter((p) => p.end > periodStart)
+    : startPeriod
+      ? [startPeriod]
+      : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1019,7 +1025,9 @@ function SlotForm({
             onChange={(e) => {
               setPeriodStart(e.target.value);
               const sp = dayPeriods.find((p) => p.start === e.target.value);
-              if (sp && periodEnd <= e.target.value) setPeriodEnd(sp.end);
+              // Hors EPS, la fin suit toujours le créneau de début
+              if (sp && (periodEnd <= e.target.value || !isEps))
+                setPeriodEnd(sp.end);
             }}
             className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
           >
@@ -1032,12 +1040,20 @@ function SlotForm({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="sl-end">Fin (peut chevaucher plusieurs créneaux)</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="sl-end">Fin</Label>
+          {!isEps && (
+            <span className="text-[11px] text-muted-foreground">
+              Liée au créneau de début
+            </span>
+          )}
+        </div>
         <select
           id="sl-end"
           value={periodEnd}
+          disabled={!isEps}
           onChange={(e) => setPeriodEnd(e.target.value)}
-          className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
+          className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono disabled:cursor-not-allowed disabled:opacity-60"
         >
           {endOptions.map((p) => (
             <option key={p.id} value={p.end}>
@@ -1046,8 +1062,9 @@ function SlotForm({
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          Ex. EPS : début « 10:20 - 11:15 » et fin « 12:10 » — le cours occupera
-          deux créneaux d'un seul bloc.
+          {isEps
+            ? "L'EPS peut occuper plusieurs créneaux d'affilée (ex. 10:20 → 12:10)."
+            : "Seule l'EPS peut occuper plusieurs créneaux d'affilée."}
         </p>
       </div>
       <div className="space-y-1.5">
@@ -1059,6 +1076,11 @@ function SlotForm({
             setSubject(e.target.value);
             // Suit la couleur de la matière tant que l'admin n'a rien choisi
             if (!initial?.color) setColor(defaultColorFor(e.target.value) ?? "");
+            // Si l'on quitte l'EPS, la fin revient au créneau simple
+            if (!isEpsSubject(e.target.value)) {
+              const sp = dayPeriods.find((p) => p.start === periodStart);
+              if (sp) setPeriodEnd(sp.end);
+            }
           }}
           placeholder="Mathématiques"
           list="subjects-list"

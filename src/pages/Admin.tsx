@@ -23,7 +23,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { optionRuleError } from "@/lib/subjects";
+import { isEpsSubject, optionRuleError } from "@/lib/subjects";
+import { periodLabel, periodsForDay } from "@/lib/periods";
 import {
   dayToUTC,
   monthWeeks,
@@ -333,13 +334,16 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
   const upsert = useMutation(api.app.upsertSlot);
   const remove = useMutation(api.app.deleteSlot);
   const [day, setDay] = useState<string>("Lundi");
-  const [start, setStart] = useState("08:00");
-  const [end, setEnd] = useState("09:00");
+  const [start, setStart] = useState("08:15");
+  const [end, setEnd] = useState("09:10");
   const [subject, setSubject] = useState("");
   const [teacher, setTeacher] = useState("");
   const [room, setRoom] = useState("");
   const [weekType, setWeekType] = useState<"A" | "B" | "AB">("AB");
   const [saving, setSaving] = useState(false);
+  // Seule l'EPS peut chevaucher plusieurs créneaux : le champ Fin est
+  // débloqué uniquement quand la matière saisie est l'EPS.
+  const epsSelected = isEpsSubject(subject);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -403,14 +407,52 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="adm-start">Début</Label>
-            <Input id="adm-start" type="time" value={start} onChange={(e) => setStart(e.target.value)} required />
+            <select
+              id="adm-start"
+              value={start}
+              onChange={(e) => {
+                setStart(e.target.value);
+                const sp = periodsForDay(day).find(
+                  (p) => p.start === e.target.value,
+                );
+                // Hors EPS, la fin suit toujours le créneau de début
+                if (sp && (end <= e.target.value || !epsSelected))
+                  setEnd(sp.end);
+              }}
+              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
+              required
+            >
+              {periodsForDay(day).map((p) => (
+                <option key={p.id} value={p.start}>
+                  {periodLabel(p.start, p.end)}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="adm-end">Fin</Label>
-            <Input id="adm-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />
-            {day === "Mercredi" && end > "12:10" && (
-              <p className="text-xs text-destructive">
-                Le mercredi, les cours s'arrêtent au plus tard à 12:10.
+            <select
+              id="adm-end"
+              value={end}
+              disabled={!epsSelected}
+              onChange={(e) => setEnd(e.target.value)}
+              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono disabled:cursor-not-allowed disabled:opacity-60"
+              required
+            >
+              {(epsSelected
+                ? periodsForDay(day).filter((p) => p.end > start)
+                : periodsForDay(day).filter(
+                    (p) => p.start === start && p.end === end,
+                  )
+              ).map((p) => (
+                <option key={p.id} value={p.end}>
+                  {p.end}
+                </option>
+              ))}
+            </select>
+            {!epsSelected && (
+              <p className="text-xs text-muted-foreground">
+                Seule l'EPS peut occuper plusieurs créneaux d'affilée.
               </p>
             )}
           </div>
@@ -443,7 +485,14 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           <Input
             id="adm-subject"
             value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            onChange={(e) => {
+              setSubject(e.target.value);
+              // Si l'on quitte l'EPS, la fin revient au créneau simple
+              if (!isEpsSubject(e.target.value)) {
+                const sp = periodsForDay(day).find((p) => p.start === start);
+                if (sp) setEnd(sp.end);
+              }
+            }}
             placeholder="Mathématiques"
             list="adm-subjects"
             required

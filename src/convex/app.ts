@@ -460,13 +460,27 @@ export const upsertSlot = mutation({
       args.subject,
       args.color,
     );
-    // Un cours peut chevaucher plusieurs créneaux (ex. EPS de 10h20 à 12h10)
-    // tant que le début ET la fin correspondent à des créneaux officiels.
+    // Un cours occupe normalement UN seul créneau fixe. Seul l'EPS peut
+    // chevaucher plusieurs créneaux (ex. EPS de 10h20 à 12h10) — le début ET
+    // la fin doivent correspondre à des créneaux officiels.
     const startsAtPeriod = PERIODS.some((p) => p.start === args.start);
     const endsAtPeriod = PERIODS.some((p) => p.end === args.end);
     if (!startsAtPeriod || !endsAtPeriod) {
       throw new Error(
         "Les horaires doivent correspondre aux créneaux fixes de la journée.",
+      );
+    }
+    const singlePeriod = PERIODS.some(
+      (p) => p.start === args.start && p.end === args.end,
+    );
+    const n = args.subject
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const isEps = !/chimie/.test(n) && /(\beps\b|ed\s*\.?\s*physique|\bsport\b)/.test(n);
+    if (!singlePeriod && !isEps) {
+      throw new Error(
+        "Seul l'EPS peut occuper plusieurs créneaux d'affilée.",
       );
     }
     const { slotId, ...rest } = args;

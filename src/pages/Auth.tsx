@@ -110,7 +110,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setIsLoading(true);
     setError(null);
     const fd = new FormData(event.currentTarget);
-    const name = (fd.get("name") as string) || "";
+    const firstName = ((fd.get("firstName") as string) || "").trim();
+    const lastName = ((fd.get("lastName") as string) || "").trim();
     const email = fd.get("email") as string;
     const password = fd.get("password") as string;
     const confirm = fd.get("confirm") as string;
@@ -124,7 +125,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         flow: "signUp",
         email,
         password,
-        ...(name ? { name } : {}),
+        ...(firstName || lastName
+          ? { name: [firstName, lastName].filter(Boolean).join(" ") }
+          : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(lastName ? { lastName } : {}),
       });
       if (result?.signingIn) {
         navigate(redirect, { replace: true });
@@ -314,9 +319,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               </div>
               <form onSubmit={handleSignUp}>
                 <CardContent className="space-y-5">
-                  <div className="space-y-2">
-                    <Label htmlFor="su-name">Prénom & nom</Label>
-                    <Input id="su-name" name="name" type="text" placeholder="Marie Dupont" disabled={isLoading} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="su-firstname">Prénom</Label>
+                      <Input id="su-firstname" name="firstName" type="text" placeholder="Marie" autoComplete="given-name" disabled={isLoading} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="su-lastname">Nom</Label>
+                      <Input id="su-lastname" name="lastName" type="text" placeholder="Dupont" autoComplete="family-name" disabled={isLoading} required />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="su-email">Email</Label>
