@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { optionValidator, weekTypeValidator } from "./schema";
-import { optionRuleError } from "../lib/subjects";
+import { optionRuleError, canSpanPeriods, subjectRequiresOption } from "../lib/subjects";
 import { PERIODS } from "../lib/periods";
 import {
   computeWeekState,
@@ -60,6 +60,7 @@ export const me = query({
       classId: user.classId,
       className: classroom?.name ?? null,
       options: user.options ?? [],
+      group: user.group ?? null,
       questionnaireDone: !!user.questionnaireDone,
     };
   },
@@ -79,8 +80,9 @@ export const submitQuestionnaire = mutation({
   args: {
     classId: v.id("classes"),
     options: v.array(v.string()),
+    group: v.optional(v.union(v.literal("G1"), v.literal("G2"))),
   },
-  handler: async (ctx, { classId, options }) => {
+  handler: async (ctx, { classId, options, group }) => {
     const user = await requireUser(ctx);
     const classroom = await ctx.db.get(classId);
     if (!classroom) throw new Error("Classe introuvable");
@@ -88,6 +90,7 @@ export const submitQuestionnaire = mutation({
     await ctx.db.patch(user._id, {
       classId,
       options: validated,
+      ...(group ? { group } : {}),
       questionnaireDone: true,
     });
   },
@@ -100,8 +103,9 @@ export const updateProfile = mutation({
     name: v.optional(v.string()),
     classId: v.optional(v.union(v.id("classes"), v.null())),
     options: v.optional(v.array(v.string())),
+    group: v.optional(v.union(v.literal("G1"), v.literal("G2"), v.null())),
   },
-  handler: async (ctx, { name, classId, options }) => {
+  handler: async (ctx, { name, classId, options, group }) => {
     const user = await requireUser(ctx);
     const update: Record<string, unknown> = {};
     if (name !== undefined) update.name = name.trim() || undefined;
@@ -110,6 +114,7 @@ export const updateProfile = mutation({
       update.options = validOptionsOrThrow(options);
       update.questionnaireDone = true;
     }
+    if (group !== undefined) update.group = group ?? undefined;
     await ctx.db.patch(user._id, update);
   },
 });
@@ -378,6 +383,7 @@ function slotView(slot: Doc<"timetableSlots">) {
     teacher: slot.teacher,
     room: slot.room,
     weekType: slot.weekType ?? "AB",
+    group: slot.group ?? null,
     color: slot.color,
     cancelled: !!slot.cancelled,
     cancellationReason: slot.cancellationReason,
@@ -413,12 +419,20 @@ export const listMySlots = query({
       .query("timetableSlots")
       .withIndex("by_class", (q) => q.eq("classId", user.classId!))
       .collect();
-    const filtered = week
-      ? rows.filter((s) => {
-          const wt = s.weekType ?? "AB";
-          return wt === "AB" || wt === week;
-        })
-      : rows;
+    const filtered = rows.filter((s) => {
+      const wt = s.weekType ?? "AB";
+      if (week && wt !== "AB" && wt !== week) return false;
+      // Les matières option ne concernent que les élèves qui l'ont choisie
+      // (les administrateurs globaux voient toutes les options).
+      const opt = subjectRequiresOption(s.subject);
+      const myOptions: string[] = user.options ?? [];
+      if (opt && !user.isAdmin && !myOptions.includes(opt)) {
+        return false;
+      }
+      // Vendredi : si un groupe est assigné, seuls ses créneaux s'affichent
+      if (s.group && user.group && s.group !== user.group) return false;
+      return true;
+    });
     filtered.sort(
       (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
     );
@@ -443,6 +457,7 @@ export const upsertSlot = mutation({
     teacher: v.optional(v.string()),
     room: v.optional(v.string()),
     weekType: v.optional(weekTypeValidator),
+    group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau spécial groupe (vendredi)
     color: v.optional(v.string()), // hex #RRGGBB, sinon couleur de la matière
   },
   handler: async (ctx, args) => {
@@ -460,9 +475,9 @@ export const upsertSlot = mutation({
       args.subject,
       args.color,
     );
-    // Un cours occupe normalement UN seul créneau fixe. Seul l'EPS peut
-    // chevaucher plusieurs créneaux (ex. EPS de 10h20 à 12h10) — le début ET
-    // la fin doivent correspondre à des créneaux officiels.
+    // Un cours occupe normalement UN seul créneau fixe. Seuls l'EPS et la
+    // Sécurité Civile peuvent chevaucher plusieurs créneaux (ex. 10h20 →
+    // 12h10) — le début ET la fin doivent correspondre à des créneaux fixes.
     const startsAtPeriod = PERIODS.some((p) => p.start === args.start);
     const endsAtPeriod = PERIODS.some((p) => p.end === args.end);
     if (!startsAtPeriod || !endsAtPeriod) {
@@ -473,18 +488,19 @@ export const upsertSlot = mutation({
     const singlePeriod = PERIODS.some(
       (p) => p.start === args.start && p.end === args.end,
     );
-    const n = args.subject
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-    const isEps = !/chimie/.test(n) && /(\beps\b|ed\s*\.?\s*physique|\bsport\b)/.test(n);
-    if (!singlePeriod && !isEps) {
+    if (!singlePeriod && !canSpanPeriods(args.subject)) {
       throw new Error(
-        "Seul l'EPS peut occuper plusieurs créneaux d'affilée.",
+        "Seuls l'EPS et la Sécurité Civile peuvent occuper plusieurs créneaux d'affilée.",
+      );
+    }
+    if (args.group && args.day !== "Vendredi") {
+      throw new Error(
+        "Le créneau Groupe 1 / Groupe 2 s'applique uniquement au vendredi.",
       );
     }
     const { slotId, ...rest } = args;
     if (!rest.color) delete rest.color;
+    if (!rest.group) delete rest.group;
     if (slotId) {
       await ctx.db.patch(slotId, rest);
       return slotId;
@@ -741,8 +757,68 @@ export const listUsers = query({
         classId: u.classId ?? null,
         className: u.classId ? classById.get(u.classId) ?? null : null,
         options: u.options ?? [],
+        group: u.group ?? null,
         questionnaireDone: !!u.questionnaireDone,
       }));
+  },
+});
+
+/** Membres de la classe du responsable (ou de la classe désignée pour un
+ *  admin global) — sert à la gestion des Groupes 1/2 du vendredi. */
+export const listMyClassMembers = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireUser(ctx);
+    const classId = me.isAdmin
+      ? me.adminOfClassId ?? me.classId ?? null
+      : me.classId ?? null;
+    if (!classId) return [];
+    if (!me.isAdmin && !me.isClassAdmin) {
+      throw new Error("Réservé aux responsables de classe");
+    }
+    const members = await ctx.db
+      .query("users")
+      .withIndex("by_class", (q) => q.eq("classId", classId))
+      .collect();
+    return members
+      .filter((u) => !u.isAnonymous)
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      .map((u) => ({
+        _id: u._id,
+        name: u.name ?? null,
+        email: u.email ?? null,
+        group: u.group ?? null,
+      }));
+  },
+});
+
+/** Attribution d'un élève au Groupe 1 ou Groupe 2 (vendredi) — réservé au
+ *  responsable de sa classe et aux administrateurs globaux. */
+export const setUserGroup = mutation({
+  args: {
+    userId: v.id("users"),
+    group: v.union(v.literal("G1"), v.literal("G2"), v.null()),
+  },
+  handler: async (ctx, { userId, group }) => {
+    const me = await requireUser(ctx);
+    const target = await ctx.db.get(userId);
+    if (!target) throw new Error("Utilisateur introuvable");
+    if (me.isAdmin) {
+      // un admin global ne gère les groupes que de sa classe désignée ou la sienne
+      const scope = me.adminOfClassId ?? me.classId ?? null;
+      if (scope && target.classId !== scope) {
+        throw new Error(
+          "Vous ne pouvez gérer les groupes que de votre classe (resp. désignée).",
+        );
+      }
+    } else if (
+      !me.isClassAdmin ||
+      !me.classId ||
+      target.classId !== me.classId
+    ) {
+      throw new Error("Réservé au responsable de la classe de cet élève.");
+    }
+    await ctx.db.patch(userId, { group: group ?? undefined });
   },
 });
 
@@ -755,6 +831,7 @@ export const updateUser = mutation({
     adminOfClassId: v.optional(v.union(v.id("classes"), v.null())),
     classId: v.optional(v.union(v.id("classes"), v.null())),
     options: v.optional(v.array(v.string())),
+    group: v.optional(v.union(v.literal("G1"), v.literal("G2"), v.null())),
   },
   handler: async (ctx, { userId, ...patch }) => {
     const admin = await requireAdmin(ctx);
@@ -768,6 +845,7 @@ export const updateUser = mutation({
       update.adminOfClassId = patch.adminOfClassId ?? undefined;
     }
     if (patch.classId !== undefined) update.classId = patch.classId ?? undefined;
+    if (patch.group !== undefined) update.group = patch.group ?? undefined;
     if (patch.options !== undefined) {
       update.options = validOptionsOrThrow(patch.options);
       update.questionnaireDone = true;
