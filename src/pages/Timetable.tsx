@@ -27,6 +27,7 @@ import {
   COLOR_CHOICES,
   defaultColorFor,
   isEpsSubject,
+  canSpanPeriods,
   slotStyle,
   subjectStyle,
 } from "@/lib/subjects";
@@ -52,6 +53,8 @@ import {
   RotateCcw,
   Trash2,
   UserRound,
+  Users2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -68,6 +71,7 @@ type Slot = {
   teacher?: string;
   room?: string;
   weekType: "A" | "B" | "AB";
+  group?: "G1" | "G2" | null;
   color?: string;
   cancelled?: boolean;
   cancellationReason?: string;
@@ -170,6 +174,12 @@ export default function Timetable() {
           isAdmin={user.isAdmin}
           onDone={() => setEditingSlotId(null)}
         />
+      )}
+
+      {(user.isAdmin || user.isClassAdmin) && (
+        <div className="mt-6">
+          <FridayGroupsCard />
+        </div>
       )}
     </AppShell>
   );
@@ -424,6 +434,11 @@ function CourseBox({
       {slot.weekType !== "AB" && (
         <span className="absolute bottom-1 right-1.5 text-[8px] font-mono opacity-70">
           {slot.weekType}
+        </span>
+      )}
+      {slot.group && (
+        <span className="absolute bottom-1 left-1.5 text-[8px] font-mono font-bold opacity-90">
+          {slot.group === "G1" ? "GR 1" : "GR 2"}
         </span>
       )}
       {eps && canEdit && (
@@ -904,6 +919,7 @@ const COMMON_SUBJECTS = [
   "Musique",
   "Latin",
   "LCE",
+  "Sécurité Civile",
   "Vie de classe",
 ];
 
@@ -931,6 +947,9 @@ function SlotForm({
   const [weekType, setWeekType] = useState<"A" | "B" | "AB">(
     initial?.weekType ?? "AB",
   );
+  const [group, setGroup] = useState<"G1" | "G2" | null>(
+    initial?.group ?? null,
+  );
   const [color, setColor] = useState<string>(
     initial?.color ?? defaultColorFor(initial?.subject ?? "") ?? "",
   );
@@ -940,11 +959,11 @@ function SlotForm({
   const dayPeriods = periodsForDay(day);
   const startPeriod =
     dayPeriods.find((p) => p.start === periodStart) ?? dayPeriods[0];
-  // Un cours occupe UN seul créneau fixe. Seule l'EPS peut chevaucher
-  // plusieurs créneaux (ex. EPS de 10:20 à 12:10) : le champ Fin est alors
-  // débloqué, sinon il est verrouillé sur la fin du créneau choisi.
-  const isEps = isEpsSubject(subject);
-  const endOptions = isEps
+  // Un cours occupe UN seul créneau fixe. Seuls l'EPS et la Sécurité Civile
+  // peuvent chevaucher plusieurs créneaux (ex. 10:20 à 12:10) : le champ Fin
+  // est alors débloqué, sinon il est verrouillé sur la fin du créneau choisi.
+  const spannable = canSpanPeriods(subject);
+  const endOptions = spannable
     ? dayPeriods.filter((p) => p.end > periodStart)
     : startPeriod
       ? [startPeriod]
@@ -965,6 +984,7 @@ function SlotForm({
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
         weekType,
+        ...(day === "Vendredi" && group ? { group } : {}),
         color: color || undefined,
       });
       toast.success(initial ? "Cours modifié." : "Cours ajouté à l'emploi du temps.");
@@ -1035,7 +1055,7 @@ function SlotForm({
               setPeriodStart(e.target.value);
               const sp = dayPeriods.find((p) => p.start === e.target.value);
               // Hors EPS, la fin suit toujours le créneau de début
-              if (sp && (periodEnd <= e.target.value || !isEps))
+              if (sp && (periodEnd <= e.target.value || !spannable))
                 setPeriodEnd(sp.end);
             }}
             className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
@@ -1051,7 +1071,7 @@ function SlotForm({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <Label htmlFor="sl-end">Fin</Label>
-          {!isEps && (
+          {!spannable && (
             <span className="text-[11px] text-muted-foreground">
               Liée au créneau de début
             </span>
@@ -1060,7 +1080,7 @@ function SlotForm({
         <select
           id="sl-end"
           value={periodEnd}
-          disabled={!isEps}
+          disabled={!spannable}
           onChange={(e) => setPeriodEnd(e.target.value)}
           className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -1071,9 +1091,9 @@ function SlotForm({
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          {isEps
-            ? "L'EPS peut occuper plusieurs créneaux d'affilée (ex. 10:20 → 12:10)."
-            : "Seule l'EPS peut occuper plusieurs créneaux d'affilée."}
+          {spannable
+            ? "L'EPS et la Sécurité Civile peuvent occuper plusieurs créneaux d'affilée."
+            : "Seuls l'EPS et la Sécurité Civile peuvent occuper plusieurs créneaux."}
         </p>
       </div>
       <div className="space-y-1.5">
@@ -1085,8 +1105,9 @@ function SlotForm({
             setSubject(e.target.value);
             // Suit la couleur de la matière tant que l'admin n'a rien choisi
             if (!initial?.color) setColor(defaultColorFor(e.target.value) ?? "");
-            // Si l'on quitte l'EPS, la fin revient au créneau simple
-            if (!isEpsSubject(e.target.value)) {
+            // Si l'on quitte l'EPS / la Sécurité Civile, la fin revient au
+            // créneau simple
+            if (!canSpanPeriods(e.target.value)) {
               const sp = dayPeriods.find((p) => p.start === periodStart);
               if (sp) setPeriodEnd(sp.end);
             }
@@ -1101,6 +1122,35 @@ function SlotForm({
           ))}
         </datalist>
       </div>
+      {day === "Vendredi" && (
+        <div className="space-y-1.5">
+          <Label>Groupe (vendredi)</Label>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(
+              [
+                [null, "Tous"],
+                ["G1", "Groupe 1 (Maths d'abord)"],
+                ["G2", "Groupe 2 (Français d'abord)"],
+              ] as const
+            ).map(([g, label]) => (
+              <Button
+                key={label}
+                type="button"
+                variant={group === g ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 rounded-none text-xs"
+                onClick={() => setGroup(g)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            « Tous » s'affiche pour toute la classe ; « Groupe 1/2 » seulement
+            pour les élèves concernés.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">
           <Label htmlFor="sl-teacher">Professeur</Label>
@@ -1264,5 +1314,170 @@ function EditSlotDialog({
         <SlotForm classId={classId} initial={slot} isAdmin={isAdmin} onDone={onDone} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------- Groupes du vendredi (responsable de classe) ----------
+
+function FridayGroupsCard() {
+  const { user } = useAuth();
+  const canManage = !!user && (user.isAdmin || user.isClassAdmin);
+  const members = useQuery(
+    api.app.listMyClassMembers,
+    canManage ? {} : "skip",
+  ) as Array<{
+    _id: Id<"users">;
+    name: string | null;
+    email: string | null;
+    group: "G1" | "G2" | null;
+  }> | undefined;
+  const setGroup = useMutation(api.app.setUserGroup);
+  const [show, setShow] = useState(false);
+
+  if (!canManage) return null;
+
+  const handleSet = async (
+    userId: Id<"users">,
+    group: "G1" | "G2" | null,
+  ) => {
+    try {
+      await setGroup({ userId, group });
+    } catch (err) {
+      toast.error(
+        err instanceof Error && !err.message.startsWith("{")
+          ? err.message
+          : "Attribution impossible.",
+      );
+    }
+  };
+
+  const g1 = (members ?? []).filter((m) => m.group === "G1");
+  const g2 = (members ?? []).filter((m) => m.group === "G2");
+  const none = (members ?? []).filter((m) => !m.group);
+
+  return (
+    <Card className="panel border-border/70">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users2 className="size-5 text-primary" /> Groupes du vendredi
+            </CardTitle>
+            <CardDescription>
+              Répartissez les élèves : Groupe 1 commence par Maths, Groupe 2 par
+              Français. Un créneau peut aussi être réservé à un groupe à la
+              création d'un cours le vendredi.
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShow((v) => !v)}>
+            {show ? "Masquer" : "Gérer"}
+          </Button>
+        </div>
+      </CardHeader>
+      {show && (
+        <CardContent>
+          {!members ? (
+            <Skeleton className="h-24 w-full" />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {(["G1", "G2"] as const).map((g) => {
+                const list = g === "G1" ? g1 : g2;
+                return (
+                  <div
+                    key={g}
+                    className="rounded-lg border border-border/60 bg-secondary/30 p-3"
+                  >
+                    <p className="text-sm font-semibold mb-2">
+                      {g === "G1" ? "Groupe 1" : "Groupe 2"}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        — {list.length} élève{list.length > 1 ? "s" : ""}
+                      </span>
+                    </p>
+                    <div className="space-y-1">
+                      {list.map((m) => (
+                        <MemberRow
+                          key={m._id}
+                          m={m}
+                          onSet={handleSet}
+                          currentGroup={g}
+                        />
+                      ))}
+                      {list.length === 0 && (
+                        <p className="text-xs text-muted-foreground py-1">
+                          Aucun élève pour le moment.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!members ? null : (
+            <div className="mt-4">
+              <p className="text-sm font-medium mb-2">
+                Sans groupe ({none.length})
+              </p>
+              <div className="space-y-1">
+                {none.map((m) => (
+                  <MemberRow key={m._id} m={m} onSet={handleSet} currentGroup={null} />
+                ))}
+                {none.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Tous les élèves ont un groupe.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function MemberRow({
+  m,
+  onSet,
+  currentGroup,
+}: {
+  m: {
+    _id: Id<"users">;
+    name: string | null;
+    email: string | null;
+    group: "G1" | "G2" | null;
+  };
+  onSet: (userId: Id<"users">, group: "G1" | "G2" | null) => void;
+  currentGroup: "G1" | "G2" | null;
+}) {
+  const other: "G1" | "G2" = currentGroup === "G1" ? "G2" : "G1";
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5">
+      <span className="text-xs truncate">
+        {m.name || m.email || "Utilisateur"}
+      </span>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-[10px] font-mono"
+          onClick={() => onSet(m._id, other)}
+          title={`Basculer en Groupe ${other === "G1" ? "1" : "2"}`}
+        >
+          → {other === "G1" ? "GR 1" : "GR 2"}
+        </Button>
+        {currentGroup && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px]"
+            onClick={() => onSet(m._id, null)}
+            title="Retirer du groupe"
+          >
+            <X className="size-3" />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

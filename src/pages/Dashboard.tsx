@@ -28,6 +28,7 @@ import {
   Shield,
   Sparkles,
   UserCog,
+  Users2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";

@@ -52,7 +52,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
-const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+const OPTIONS = [
+  "LCE",
+  "Latin",
+  "Allemand",
+  "Espagnol",
+  "Sécurité Civile",
+] as const;
 
 type WeekState = {
   week: "A" | "B";
@@ -602,6 +608,7 @@ function UsersTab() {
       adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
       options?: string[];
+      group?: "G1" | "G2" | null;
     },
   ) => {
     try {
@@ -664,6 +671,7 @@ function UserRow({
       adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
       options?: string[];
+      group?: "G1" | "G2" | null;
     },
   ) => void;
 }) {
@@ -763,6 +771,11 @@ function UserRow({
         </div>
         <div className="flex items-center gap-2 text-xs flex-wrap">
           {u.className && <Badge variant="outline">{u.className}</Badge>}
+          {(u as { group?: string | null }).group && (
+            <Badge variant="outline" className="font-mono">
+              {(u as { group?: string | null }).group === "G1" ? "Groupe 1" : "Groupe 2"}
+            </Badge>
+          )}
           {u.options.length > 0 ? (
             u.options.map((o) => (
               <Badge key={o} variant="outline">{o}</Badge>
@@ -812,6 +825,22 @@ function UserRow({
               {classes.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}</option>
               ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Groupe du vendredi</Label>
+            <select
+              value={(u as { group?: string | null }).group ?? ""}
+              onChange={(e) =>
+                onUpdate(u._id, {
+                  group: (e.target.value || null) as "G1" | "G2" | null,
+                })
+              }
+              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+            >
+              <option value="">— Aucun —</option>
+              <option value="G1">Groupe 1 (Maths d'abord)</option>
+              <option value="G2">Groupe 2 (Français d'abord)</option>
             </select>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
@@ -934,7 +963,7 @@ function OptionsDialog({
   const toggle = (opt: string) => {
     setSelected((prev) => {
       if (prev.includes(opt)) return prev.filter((o) => o !== opt);
-      if (prev.length >= 3) return prev;
+      if (prev.length >= 4) return prev;
       // Interdiction Allemand + Espagnol ensemble : remplace l'autre LV2
       if (opt === "Allemand" && prev.includes("Espagnol")) {
         return prev.filter((o) => o !== "Espagnol").concat("Allemand");
@@ -953,11 +982,12 @@ function OptionsDialog({
           <DialogTitle>Options de {userName}</DialogTitle>
           <DialogDescription>
             Au moins une langue : <strong>Allemand</strong> ou <strong>Espagnol</strong>{" "}
-            (jamais les deux). <strong>LCE</strong> et <strong>Latin</strong> se
-            cumulent avec l'une des deux langues. 3 options maximum.
+            (jamais les deux). <strong>LCE</strong>, <strong>Latin</strong> et{" "}
+            <strong>Sécurité Civile</strong> se cumulent avec l'une des deux
+            langues. 4 options maximum.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {OPTIONS.map((opt) => (
             <button
               key={opt}
@@ -977,7 +1007,7 @@ function OptionsDialog({
         </div>
         {ruleError && <p className="text-xs text-destructive">{ruleError}</p>}
         <p className="text-xs text-muted-foreground">
-          {selected.length}/3 option{selected.length > 1 ? "s" : ""} sélectionnée
+          {selected.length}/4 option{selected.length > 1 ? "s" : ""} sélectionnée
           {selected.length > 1 ? "s" : ""}
         </p>
         <div className="flex gap-2">

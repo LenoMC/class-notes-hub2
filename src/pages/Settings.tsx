@@ -31,7 +31,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
-const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+const OPTIONS = [
+  "LCE",
+  "Latin",
+  "Allemand",
+  "Espagnol",
+  "Sécurité Civile",
+] as const;
 
 export default function Settings() {
   const { user, isLoading } = useAuth();
@@ -41,6 +47,7 @@ export default function Settings() {
   const [name, setName] = useState("");
   const [classId, setClassId] = useState<string>("");
   const [options, setOptions] = useState<string[]>([]);
+  const [group, setGroup] = useState<"G1" | "G2" | null>(null);
   const [saving, setSaving] = useState(false);
   const [emailEditing, setEmailEditing] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -55,6 +62,7 @@ export default function Settings() {
     setName(user.name ?? "");
     setClassId(user.classId ?? "");
     setOptions(user.options ?? []);
+    setGroup((user as { group?: "G1" | "G2" | null }).group ?? null);
   }, [user]);
 
   if (isLoading) {
@@ -73,12 +81,13 @@ export default function Settings() {
   const dirty =
     name !== (user.name ?? "") ||
     classId !== (user.classId ?? "") ||
-    JSON.stringify(options) !== JSON.stringify(user.options ?? []);
+    JSON.stringify(options) !== JSON.stringify(user.options ?? []) ||
+    group !== ((user as { group?: "G1" | "G2" | null }).group ?? null);
 
   const toggleOption = (opt: string) => {
     setOptions((prev) => {
       if (prev.includes(opt)) return prev.filter((o) => o !== opt);
-      if (prev.length >= 3) return prev;
+      if (prev.length >= 4) return prev;
       // Interdiction Allemand + Espagnol : l'une remplace l'autre
       if (opt === "Allemand" && prev.includes("Espagnol")) {
         return prev.filter((o) => o !== "Espagnol").concat("Allemand");
@@ -101,6 +110,7 @@ export default function Settings() {
         name: name.trim(),
         classId: (classId || null) as Id<"classes"> | null,
         options,
+        group,
       });
       toast.success("Vos informations ont été mises à jour.");
     } catch (err) {
@@ -231,10 +241,10 @@ export default function Settings() {
               <Label>Mes options</Label>
               <p className="text-xs text-muted-foreground">
                 Au moins une langue : <strong>Allemand</strong> ou{" "}
-                <strong>Espagnol</strong> (pas les deux). LCE et Latin se cumulent
-                — 3 options maximum.
+                <strong>Espagnol</strong> (pas les deux). LCE, Latin et Sécurité
+                Civile se cumulent — 4 options maximum.
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                 {OPTIONS.map((opt) => (
                   <button
                     key={opt}
@@ -253,6 +263,38 @@ export default function Settings() {
                 ))}
               </div>
               {ruleError && <p className="text-xs text-destructive">{ruleError}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Mon groupe du vendredi</Label>
+              <p className="text-xs text-muted-foreground">
+                Uniquement si votre classe fonctionne par groupes le vendredi :
+                <strong> Groupe 1</strong> commence par Maths, <strong>Groupe 2</strong>{" "}
+                par Français. Sinon, laissez sur « Aucun ».
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    [null, "Aucun"],
+                    ["G1", "Groupe 1"],
+                    ["G2", "Groupe 2"],
+                  ] as const
+                ).map(([g, label]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setGroup(g)}
+                    className={cn(
+                      "cursor-pointer rounded-lg border px-3 py-2.5 text-sm font-medium transition-all",
+                      group === g
+                        ? "border-primary bg-primary/10 text-primary glow-ring-soft"
+                        : "border-border bg-secondary/40 hover:border-primary/50",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <Button
