@@ -34,7 +34,13 @@ import { Link } from "react-router";
 import { toast } from "sonner";
 
 const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
-const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+const OPTIONS = [
+  "LCE",
+  "Latin",
+  "Allemand",
+  "Espagnol",
+  "Sécurité Civile",
+] as const;
 
 type Me = NonNullable<ReturnType<typeof useAuth>["user"]>;
 
@@ -95,6 +101,7 @@ function Questionnaire({ user }: { user: Me }) {
   const submit = useMutation(api.app.submitQuestionnaire);
   const [classId, setClassId] = useState<Id<"classes"> | null>(null);
   const [options, setOptions] = useState<string[]>([]);
+  const [group, setGroup] = useState<"G1" | "G2" | null>(null);
   const [saving, setSaving] = useState(false);
 
   const ruleError = optionRuleError(options);
@@ -110,7 +117,7 @@ function Questionnaire({ user }: { user: Me }) {
           ? next.filter((o) => o !== (opt === "Allemand" ? "Espagnol" : "Allemand"))
           : next.filter((o) => o !== opt || opt === "Allemand" || opt === "Espagnol");
       }
-      return next.slice(0, 3);
+      return next.slice(0, 4);
     });
   };
 
@@ -126,6 +133,7 @@ function Questionnaire({ user }: { user: Me }) {
       await submit({
         classId,
         options: options as (typeof OPTIONS)[number][],
+        ...(group ? { group } : {}),
       });
       toast.success("Préférences enregistrées. Bienvenue dans votre espace.");
     } catch (e2) {
@@ -190,10 +198,11 @@ function Questionnaire({ user }: { user: Me }) {
           </p>
           <p className="mb-3 text-xs text-muted-foreground">
             Au moins une langue : <strong>Allemand</strong> ou <strong>Espagnol</strong>{" "}
-            (pas les deux). Vous pouvez y ajouter <strong>LCE</strong> et/ou{" "}
-            <strong>Latin</strong> — 3 options maximum.
+            (pas les deux). Vous pouvez y ajouter <strong>LCE</strong>,{" "}
+            <strong>Latin</strong> et/ou <strong>Sécurité Civile</strong> — 4
+            options maximum.
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             {OPTIONS.map((opt) => (
               <button
                 key={opt}
@@ -214,6 +223,44 @@ function Questionnaire({ user }: { user: Me }) {
           {ruleError && (
             <p className="mt-2 text-xs text-destructive">{ruleError}</p>
           )}
+        </div>
+
+        <div>
+          <p className="mb-1 flex items-center gap-2 font-medium">
+            <Users2 className="size-4 text-primary" /> Groupe du vendredi
+            <span className="text-xs font-normal text-muted-foreground">
+              (si votre classe fonctionne par groupes)
+            </span>
+          </p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Le vendredi, certaines classes sont réparties en deux groupes :{" "}
+            <strong>Groupe 1</strong> commence par <strong>Mathématiques</strong>,{" "}
+            <strong>Groupe 2</strong> par <strong>Français</strong>. Le
+            responsable de votre classe peut modifier cette attribution à tout
+            moment.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["G1", "Groupe 1 — commence par Maths"],
+                ["G2", "Groupe 2 — commence par Français"],
+              ] as const
+            ).map(([g, label]) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGroup((cur) => (cur === g ? null : g))}
+                className={cn(
+                  "cursor-pointer rounded-lg border px-3 py-2.5 text-sm font-medium transition-all text-left",
+                  group === g
+                    ? "border-primary bg-primary/10 text-primary glow-ring-soft"
+                    : "border-border bg-secondary/40 hover:border-primary/50",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <Button
