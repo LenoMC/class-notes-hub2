@@ -66,6 +66,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         return {
           email: params.email as string,
           ...(params.name ? { name: params.name as string } : {}),
+          ...(params.firstName
+            ? { firstName: params.firstName as string }
+            : {}),
+          ...(params.lastName ? { lastName: params.lastName as string } : {}),
         };
       },
       validatePasswordRequirements: (password: string) => {

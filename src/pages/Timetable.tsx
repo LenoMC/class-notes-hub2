@@ -75,6 +75,15 @@ type WeekState = {
   nextSchoolMonday: string | null;
 };
 
+/** Position d'un cours dans la grille : ligne de départ + nombre de lignes. */
+function slotPlacement(slot: Slot): { startIdx: number; span: number } {
+  const startIdx = PERIODS.findIndex((p) => p.start === slot.start);
+  const endIdx = PERIODS.findIndex((p) => p.end === slot.end);
+  const s = startIdx >= 0 ? startIdx : 0;
+  const e = endIdx >= 0 ? endIdx : s;
+  return { startIdx: s, span: Math.max(e - s + 1, 1) };
+}
+
 export default function Timetable() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -161,7 +170,7 @@ export default function Timetable() {
   );
 }
 
-// ---------- Grille à créneaux fixes ----------
+// ---------- Grille à créneaux fixes (avec fusion sur plusieurs créneaux) ----------
 
 function TimetableGrid({
   slots,
@@ -186,11 +195,14 @@ function TimetableGrid({
   const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
   const todayName = DAYS_FR[new Date().getDay()];
 
-  // Index : « jour|début|fin » -> créneaux (max 2 : un A + un B)
-  const cellMap = useMemo(() => {
+  // Regroupe les cours par case de départ « jour|ligne » (A et B côte à côte)
+  const cellGroups = useMemo(() => {
     const map = new Map<string, Slot[]>();
     for (const s of slots) {
-      const key = `${s.day}|${s.start}|${s.end}`;
+      const di = DAYS.indexOf(s.day as (typeof DAYS)[number]);
+      if (di < 0) continue;
+      const { startIdx } = slotPlacement(s);
+      const key = `${di}|${startIdx}`;
       const arr = map.get(key) ?? [];
       arr.push(s);
       map.set(key, arr);
@@ -229,9 +241,12 @@ function TimetableGrid({
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto pb-1">
-            <div className="min-w-[860px] space-y-2">
+            <div className="min-w-[860px]">
               {/* En-tête des jours */}
-              <div className="grid gap-2" style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}>
+              <div
+                className="grid gap-2 mb-2"
+                style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}
+              >
                 <div />
                 {DAYS.map((d) => (
                   <div
@@ -253,124 +268,86 @@ function TimetableGrid({
                 ))}
               </div>
 
-              {/* Une ligne par créneau fixe — bien séparés */}
-              {PERIODS.map((period) => (
-                <div
-                  key={period.id}
-                  className="grid gap-2"
-                  style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}
-                >
-                  {/* Étiquette du créneau (horaires fixes) */}
-                  <div className="flex items-center justify-end pr-1">
+              {/* Corps : une ligne de grille par créneau fixe.
+                  Un cours de deux créneaux (ex. EPS 10:20 → 12:10) fusionne
+                  les lignes à la verticale, à cheval sur la croix. */}
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: "92px repeat(5, 1fr)",
+                  gridTemplateRows: `repeat(${PERIODS.length}, minmax(84px, auto))`,
+                }}
+              >
+                {/* Étiquettes des créneaux (horaires fixes) */}
+                {PERIODS.map((p, i) => (
+                  <div
+                    key={p.id}
+                    style={{ gridRow: i + 1, gridColumn: 1 }}
+                    className="flex items-center justify-end pr-1"
+                  >
                     <span className="font-mono text-[10px] leading-tight text-muted-foreground text-right">
-                      {periodLabel(period.start, period.end)}
+                      {periodLabel(p.start, p.end)}
                     </span>
                   </div>
-                  {DAYS.map((day) => {
-                    // 11:15-12:10 n'existe que le mercredi
-                    if (period.mercrediOnly && day !== "Mercredi") {
-                      return (
-                        <div
-                          key={day}
-                          className="rounded-xl border border-dashed border-border/30 bg-transparent"
-                        />
-                      );
-                    }
-                    const cellSlots = (cellMap.get(`${day}|${period.start}|${period.end}`) ?? [])
-                      .sort((a, b) => a.weekType.localeCompare(b.weekType));
-                    const isMercrediOnlyRow = period.mercrediOnly;
+                ))}
+
+                {/* Cellules de fond (toutes les cases jour/créneau) */}
+                {PERIODS.map((p, i) =>
+                  DAYS.map((day, di) => {
+                    const indispo = p.mercrediOnly && day !== "Mercredi";
                     return (
                       <div
-                        key={day}
+                        key={`bg-${p.id}-${day}`}
+                        style={{ gridRow: i + 1, gridColumn: di + 2 }}
                         className={cn(
-                          "min-h-[76px] rounded-xl border border-border/40 bg-secondary/25 p-1.5",
-                          isMercrediOnlyRow && "bg-secondary/10",
+                          "rounded-xl border p-1.5",
+                          indispo
+                            ? "border-dashed border-border/25"
+                            : "border-border/40 bg-secondary/25",
+                          p.mercrediOnly && !indispo && "bg-secondary/10",
+                        )}
+                      />
+                    );
+                  }),
+                )}
+
+                {/* Cours : placés sur leur case de départ, avec fusion verticale */}
+                {[...cellGroups.entries()].map(([key, group]) => {
+                  const [diStr, siStr] = key.split("|");
+                  const di = Number(diStr);
+                  const startIdx = Number(siStr);
+                  const span = Math.max(
+                    ...group.map((s) => slotPlacement(s).span),
+                  );
+                  return (
+                    <div
+                      key={key}
+                      style={{
+                        gridRow: `${startIdx + 1} / span ${span}`,
+                        gridColumn: di + 2,
+                      }}
+                      className="p-0"
+                    >
+                      <div
+                        className={cn(
+                          "grid h-full gap-1.5",
+                          group.length === 2 ? "grid-cols-2" : "grid-cols-1",
                         )}
                       >
-                        {cellSlots.length === 0 ? (
-                          <div className="h-full min-h-[62px] rounded-lg bg-transparent" />
-                        ) : (
-                          <div
-                            className={cn(
-                              "grid h-full gap-1.5",
-                              cellSlots.length === 2 ? "grid-cols-2" : "grid-cols-1",
-                            )}
-                          >
-                            {cellSlots.map((slot) => {
-                              const eps = isEpsSubject(slot.subject);
-                              return (
-                                <div
-                                  key={slot._id}
-                                  style={slotStyle(slot.subject, slot.color)}
-                                  className={cn(
-                                    "relative flex flex-col justify-center rounded-lg border px-2.5 py-2 overflow-hidden shadow-sm",
-                                    slot.cancelled && "line-through decoration-destructive/70",
-                                    !eps &&
-                                      "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:brightness-110",
-                                    eps && "cursor-default",
-                                  )}
-                                  onClick={() => {
-                                    // Le sport n'a pas de devoirs : case non cliquable
-                                    if (eps) return;
-                                    onOpen(slot);
-                                  }}
-                                  title={
-                                    eps
-                                      ? "EPS — aucun devoir ni document"
-                                      : `${slot.subject} — voir les documents`
-                                  }
-                                >
-                                  <p className="text-[13px] font-bold leading-tight truncate">
-                                    {slot.cancelled && (
-                                      <Ban className="inline size-3 mr-1 text-destructive" />
-                                    )}
-                                    {slot.subject}
-                                  </p>
-                                  {slot.teacher && (
-                                    <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90 truncate">
-                                      <UserRound className="size-2.5 shrink-0" />
-                                      {slot.teacher}
-                                    </p>
-                                  )}
-                                  {slot.room && (
-                                    <p className="flex items-center gap-1 text-[10px] opacity-80 truncate italic">
-                                      <MapPin className="size-2.5 shrink-0" />
-                                      {slot.room}
-                                    </p>
-                                  )}
-                                  {slot.weekType !== "AB" && (
-                                    <span className="absolute bottom-1 right-1.5 text-[8px] font-mono opacity-70">
-                                      {slot.weekType}
-                                    </span>
-                                  )}
-                                  {eps && canEdit && (
-                                    <button
-                                      type="button"
-                                      className="absolute right-1 top-1 rounded p-1 bg-background/70 opacity-70 hover:opacity-100 cursor-pointer"
-                                      title="Modifier ce cours"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEdit(slot);
-                                      }}
-                                    >
-                                      <Pencil className="size-3" />
-                                    </button>
-                                  )}
-                                  {slot.cancelled && (
-                                    <span className="absolute top-1 right-1 text-[8px] text-destructive font-bold uppercase">
-                                      {eps ? "" : "annulé"}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {group.map((slot) => (
+                          <CourseBox
+                            key={slot._id}
+                            slot={slot}
+                            canEdit={canEdit}
+                            onOpen={onOpen}
+                            onEdit={onEdit}
+                          />
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -383,6 +360,82 @@ function TimetableGrid({
         canEdit={canEdit}
       />
     </>
+  );
+}
+
+function CourseBox({
+  slot,
+  canEdit,
+  onOpen,
+  onEdit,
+}: {
+  slot: Slot;
+  canEdit: boolean;
+  onOpen: (slot: Slot) => void;
+  onEdit: (slot: Slot) => void;
+}) {
+  const eps = isEpsSubject(slot.subject);
+  return (
+    <div
+      style={slotStyle(slot.subject, slot.color)}
+      className={cn(
+        "relative flex flex-col justify-center rounded-lg border px-2.5 py-2 overflow-hidden shadow-sm",
+        slot.cancelled && "line-through decoration-destructive/70",
+        !eps &&
+          "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:brightness-110",
+        eps && "cursor-default",
+      )}
+      onClick={() => {
+        // Le sport n'a pas de devoirs : case non cliquable
+        if (eps) return;
+        onOpen(slot);
+      }}
+      title={
+        eps
+          ? "EPS — aucun devoir ni document"
+          : `${slot.subject} — voir les documents`
+      }
+    >
+      <p className="text-[13px] font-bold leading-tight truncate">
+        {slot.cancelled && <Ban className="inline size-3 mr-1 text-destructive" />}
+        {slot.subject}
+      </p>
+      {slot.teacher && (
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90 truncate">
+          <UserRound className="size-2.5 shrink-0" />
+          {slot.teacher}
+        </p>
+      )}
+      {slot.room && (
+        <p className="flex items-center gap-1 text-[10px] opacity-80 truncate italic">
+          <MapPin className="size-2.5 shrink-0" />
+          {slot.room}
+        </p>
+      )}
+      {slot.weekType !== "AB" && (
+        <span className="absolute bottom-1 right-1.5 text-[8px] font-mono opacity-70">
+          {slot.weekType}
+        </span>
+      )}
+      {eps && canEdit && (
+        <button
+          type="button"
+          className="absolute right-1 top-1 rounded p-1 bg-background/70 opacity-70 hover:opacity-100 cursor-pointer"
+          title="Modifier ce cours"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(slot);
+          }}
+        >
+          <Pencil className="size-3" />
+        </button>
+      )}
+      {slot.cancelled && (
+        <span className="absolute top-1 right-1 text-[8px] text-destructive font-bold uppercase">
+          {eps ? "" : "annulé"}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -859,9 +912,10 @@ function SlotForm({
   const upsert = useMutation(api.app.upsertSlot);
   const remove = useMutation(api.app.deleteSlot);
   const [day, setDay] = useState<string>(initial?.day ?? "Lundi");
-  const [periodKey, setPeriodKey] = useState<string>(
-    initial ? `${initial.start}-${initial.end}` : "08:15-09:10",
+  const [periodStart, setPeriodStart] = useState<string>(
+    initial?.start ?? "08:15",
   );
+  const [periodEnd, setPeriodEnd] = useState<string>(initial?.end ?? "09:10");
   const [subject, setSubject] = useState(initial?.subject ?? "");
   const [teacher, setTeacher] = useState(initial?.teacher ?? "");
   const [room, setRoom] = useState(initial?.room ?? "");
@@ -875,20 +929,23 @@ function SlotForm({
   const [removing, setRemoving] = useState(false);
 
   const dayPeriods = periodsForDay(day);
-  const selectedPeriod =
-    dayPeriods.find((p) => `${p.start}-${p.end}` === periodKey) ?? dayPeriods[0];
+  const startPeriod =
+    dayPeriods.find((p) => p.start === periodStart) ?? dayPeriods[0];
+  // Un cours peut chevaucher plusieurs créneaux : fin = n'importe quelle fin
+  // de créneau postérieure au début (ex. EPS de 10:20 à 12:10).
+  const endOptions = dayPeriods.filter((p) => p.end > periodStart);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPeriod) return;
+    if (!startPeriod) return;
     setSaving(true);
     try {
       await upsert({
         slotId: initial?._id,
         classId,
         day: day as (typeof DAYS)[number],
-        start: selectedPeriod.start,
-        end: selectedPeriod.end,
+        start: startPeriod.start,
+        end: periodEnd,
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
@@ -934,10 +991,15 @@ function SlotForm({
             id="sl-day"
             value={day}
             onChange={(e) => {
-              setDay(e.target.value);
-              const next = periodsForDay(e.target.value);
-              if (!next.some((p) => `${p.start}-${p.end}` === periodKey)) {
-                setPeriodKey(`${next[0].start}-${next[0].end}`);
+              const nextDay = e.target.value;
+              setDay(nextDay);
+              const next = periodsForDay(nextDay);
+              if (!next.some((p) => p.start === periodStart)) {
+                setPeriodStart(next[0].start);
+                setPeriodEnd(next[0].end);
+              } else if (!next.some((p) => p.end === periodEnd)) {
+                const sp = next.find((p) => p.start === periodStart) ?? next[0];
+                setPeriodEnd(sp.end);
               }
             }}
             className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
@@ -950,20 +1012,43 @@ function SlotForm({
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="sl-period">Créneau</Label>
+          <Label htmlFor="sl-start">Début</Label>
           <select
-            id="sl-period"
-            value={periodKey}
-            onChange={(e) => setPeriodKey(e.target.value)}
+            id="sl-start"
+            value={periodStart}
+            onChange={(e) => {
+              setPeriodStart(e.target.value);
+              const sp = dayPeriods.find((p) => p.start === e.target.value);
+              if (sp && periodEnd <= e.target.value) setPeriodEnd(sp.end);
+            }}
             className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
           >
             {dayPeriods.map((p) => (
-              <option key={p.id} value={`${p.start}-${p.end}`}>
+              <option key={p.id} value={p.start}>
                 {periodLabel(p.start, p.end)}
               </option>
             ))}
           </select>
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="sl-end">Fin (peut chevaucher plusieurs créneaux)</Label>
+        <select
+          id="sl-end"
+          value={periodEnd}
+          onChange={(e) => setPeriodEnd(e.target.value)}
+          className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
+        >
+          {endOptions.map((p) => (
+            <option key={p.id} value={p.end}>
+              {p.end}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          Ex. EPS : début « 10:20 - 11:15 » et fin « 12:10 » — le cours occupera
+          deux créneaux d'un seul bloc.
+        </p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="sl-subject">Matière</Label>
@@ -1111,7 +1196,7 @@ function AddSlotDialog({
         <DialogHeader>
           <DialogTitle>Ajouter un cours</DialogTitle>
           <DialogDescription>
-            Créneau fixe de l'emploi du temps de la classe.
+            Créneau de l'emploi du temps de la classe.
           </DialogDescription>
         </DialogHeader>
         <SlotForm

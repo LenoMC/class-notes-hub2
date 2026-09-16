@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError } from "../lib/subjects";
+import { PERIODS } from "../lib/periods";
 import {
   computeWeekState,
   todayDayString,
@@ -459,6 +460,15 @@ export const upsertSlot = mutation({
       args.subject,
       args.color,
     );
+    // Un cours peut chevaucher plusieurs créneaux (ex. EPS de 10h20 à 12h10)
+    // tant que le début ET la fin correspondent à des créneaux officiels.
+    const startsAtPeriod = PERIODS.some((p) => p.start === args.start);
+    const endsAtPeriod = PERIODS.some((p) => p.end === args.end);
+    if (!startsAtPeriod || !endsAtPeriod) {
+      throw new Error(
+        "Les horaires doivent correspondre aux créneaux fixes de la journée.",
+      );
+    }
     const { slotId, ...rest } = args;
     if (!rest.color) delete rest.color;
     if (slotId) {
