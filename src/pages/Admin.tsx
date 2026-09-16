@@ -620,10 +620,13 @@ function UserRow({
 }) {
   const classes = useQuery(api.app.listClasses) ?? [];
   const remove = useMutation(api.app.deleteUser);
+  const updateEmail = useMutation(api.app.adminUpdateUserEmail);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -655,7 +658,59 @@ function UserRow({
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+          {emailEditing ? (
+            <div className="mt-1 flex gap-1.5 items-center">
+              <Input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="nouvel.email@exemple.fr"
+                className="h-7 text-xs flex-1 min-w-40"
+              />
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={async () => {
+                  try {
+                    await updateEmail({ userId: u._id, email: newEmail });
+                    toast.success("Email mis à jour.");
+                    setEmailEditing(false);
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error && !err.message.startsWith("{")
+                        ? err.message
+                        : "Modification impossible.",
+                    );
+                  }
+                }}
+              >
+                OK
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setEmailEditing(false)}
+              >
+                <X className="size-3" />
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+              {u.email}
+              <button
+                type="button"
+                title="Modifier l'email"
+                className="opacity-50 hover:opacity-100 cursor-pointer"
+                onClick={() => {
+                  setNewEmail(u.email ?? "");
+                  setEmailEditing(true);
+                }}
+              >
+                <Pencil className="size-3" />
+              </button>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 text-xs flex-wrap">
           {u.className && <Badge variant="outline">{u.className}</Badge>}

@@ -30,6 +30,7 @@ import {
   slotStyle,
   subjectStyle,
 } from "@/lib/subjects";
+import { PERIODS, periodLabel, periodsForDay } from "@/lib/periods";
 import { formatDayFr } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -40,20 +41,18 @@ import {
   FileUp,
   Link2,
   Lock,
+  MapPin,
   Pencil,
   Plus,
   RotateCcw,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
-const DAY_START = 8.25; // 8h15
-const DAY_END = 16.75; // 16h45
-const HOUR_PX = 62;
-const MOBILE_HOUR_PX = 46;
 
 type Slot = {
   _id: Id<"timetableSlots">;
@@ -162,7 +161,7 @@ export default function Timetable() {
   );
 }
 
-// ---------- Grille ----------
+// ---------- Grille à créneaux fixes ----------
 
 function TimetableGrid({
   slots,
@@ -183,25 +182,25 @@ function TimetableGrid({
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
-  const hourPx = MOBILE_HOUR_PX;
-  const totalH = DAY_END - DAY_START;
-  const gridH = totalH * hourPx;
-
-  const halfRows = useMemo(
-    () => Array.from({ length: Math.round(totalH * 2) }, (_, i) => DAY_START + i / 2),
-    [],
-  );
-
-  const timeToY = (time: string): number => {
-    const [h, m] = time.split(":").map(Number);
-    return (h + m / 60 - DAY_START) * hourPx;
-  };
-
   const week = weekState?.week ?? "A";
+  const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+  const todayName = DAYS_FR[new Date().getDay()];
+
+  // Index : « jour|début|fin » -> créneaux (max 2 : un A + un B)
+  const cellMap = useMemo(() => {
+    const map = new Map<string, Slot[]>();
+    for (const s of slots) {
+      const key = `${s.day}|${s.start}|${s.end}`;
+      const arr = map.get(key) ?? [];
+      arr.push(s);
+      map.set(key, arr);
+    }
+    return map;
+  }, [slots]);
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
           <p className="text-sm text-muted-foreground">
@@ -214,7 +213,10 @@ function TimetableGrid({
             )}
           </p>
         </div>
-        <Badge variant="outline" className="font-mono text-xs border-primary/50 text-primary">
+        <Badge
+          variant="outline"
+          className="font-mono text-xs border-primary/50 text-primary"
+        >
           Semaine {weekState?.isHoliday ? "— vacances" : week || "…"} (actuelle)
         </Badge>
         {canEdit && (
@@ -225,143 +227,150 @@ function TimetableGrid({
       </div>
 
       <Card className="panel border-border/70 overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <div className="min-w-[640px]">
+        <CardContent className="p-3 sm:p-5">
+          <div className="overflow-x-auto pb-1">
+            <div className="min-w-[860px] space-y-2">
               {/* En-tête des jours */}
-              <div
-                className="grid border-b border-border/60 bg-secondary/40"
-                style={{ gridTemplateColumns: "48px repeat(5, 1fr)" }}
-              >
+              <div className="grid gap-2" style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}>
                 <div />
                 {DAYS.map((d) => (
-                  <div key={d} className="py-2 text-center text-sm font-semibold">
-                    <span className="hidden sm:inline">{d}</span>
-                    <span className="sm:hidden">{d.slice(0, 3)}</span>
-                  </div>
-                ))}
-              </div>
-              {/* Corps */}
-              <div
-                className="relative grid"
-                style={{
-                  gridTemplateColumns: "48px repeat(5, 1fr)",
-                  height: gridH,
-                }}
-              >
-                {/* Colonne des heures */}
-                <div className="relative">
-                  {halfRows.map((h, i) => {
-                    const hh = Math.floor(h);
-                    const mm = h % 1 === 0 ? "00" : "30";
-                    return (
-                      <div
-                        key={i}
-                        className="absolute right-1.5 text-[9px] text-muted-foreground font-mono"
-                        style={{ top: i * (hourPx / 2) - 5 }}
-                      >
-                        {hh}:{mm}
-                      </div>
-                    );
-                  })}
-                </div>
-                {DAYS.map((day) => (
-                  <div key={day} className="relative border-l border-border/60">
-                    {halfRows.map((_, i) => (
-                      <div
-                        key={i}
-                        className="absolute inset-x-0 border-t border-border/25"
-                        style={{ top: (i + 1) * (hourPx / 2) }}
-                      />
-                    ))}
-                    {/* Placement : les créneaux AB prennent toute la largeur ;
-                        les créneaux A et B qui se chevauchent sont côte à côte. */}
-                    {placeSlots(slots.filter((s) => s.day === day), timeToY, hourPx).map(
-                      ({ slot, left, width }) => {
-                        const top = timeToY(slot.start);
-                        const height = Math.max(
-                          timeToY(slot.end) - timeToY(slot.start) - 3,
-                          24,
-                        );
-                        const eps = isEpsSubject(slot.subject);
-                        return (
-                          <div
-                            key={slot._id}
-                            style={{
-                              top: top + 2,
-                              height,
-                              left: `${left}%`,
-                              width: `${width}%`,
-                              ...slotStyle(slot.subject, slot.color),
-                            }}
-                            className={cn(
-                              "absolute rounded-lg border px-1.5 py-1 text-left overflow-hidden",
-                              slot.cancelled && "line-through decoration-destructive/70",
-                              !eps && "transition-transform hover:z-10 hover:scale-[1.02]",
-                              eps ? "cursor-default" : "cursor-pointer",
-                            )}
-                            onClick={() => {
-                              // Le sport n'a pas de devoirs : case non cliquable
-                              if (eps) return;
-                              onOpen(slot);
-                            }}
-                            title={
-                              eps
-                                ? "EPS — aucun devoir ni document"
-                                : `${slot.subject} — voir les documents`
-                            }
-                          >
-                            <p className="text-[11px] sm:text-xs font-semibold truncate leading-tight">
-                              {slot.cancelled && (
-                                <Ban className="inline size-3 mr-1 text-destructive" />
-                              )}
-                              {slot.subject}
-                            </p>
-                            {height > 34 && (
-                              <p className="text-[9px] sm:text-[10px] opacity-85 truncate leading-tight">
-                                {slot.start}–{slot.end}
-                              </p>
-                            )}
-                            {height > 52 && slot.teacher && (
-                              <p className="text-[9px] sm:text-[10px] opacity-75 truncate leading-tight">
-                                {slot.teacher}
-                              </p>
-                            )}
-                            {height > 66 && slot.room && (
-                              <p className="text-[9px] sm:text-[10px] opacity-75 truncate leading-tight italic">
-                                {slot.room}
-                              </p>
-                            )}
-                            {eps && canEdit && (
-                              <button
-                                type="button"
-                                className="absolute right-1 top-1 rounded p-1 bg-background/70 opacity-70 hover:opacity-100 cursor-pointer"
-                                title="Modifier ce cours"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEdit(slot);
-                                }}
-                              >
-                                <Pencil className="size-3" />
-                              </button>
-                            )}
-                            {slot.weekType !== "AB" && height > 30 && (
-                              <span className="absolute bottom-0.5 right-1 text-[8px] font-mono opacity-80">
-                                {slot.weekType}
-                              </span>
-                            )}
-                            {slot.cancelled && height > 44 && (
-                              <p className="text-[9px] text-destructive font-semibold">
-                                Annulé
-                              </p>
-                            )}
-                          </div>
-                        );
-                      },
+                  <div
+                    key={d}
+                    className={cn(
+                      "py-2 text-center text-sm font-bold tracking-wide rounded-lg border transition-colors",
+                      d === todayName
+                        ? "bg-primary/20 border-primary/50 text-primary shadow-[0_0_16px_rgba(91,116,201,0.25)]"
+                        : "bg-secondary/60 border-border/50",
+                    )}
+                  >
+                    {d}
+                    {d === todayName && (
+                      <span className="block text-[9px] font-mono font-normal opacity-75">
+                        aujourd'hui
+                      </span>
                     )}
                   </div>
                 ))}
               </div>
+
+              {/* Une ligne par créneau fixe — bien séparés */}
+              {PERIODS.map((period) => (
+                <div
+                  key={period.id}
+                  className="grid gap-2"
+                  style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}
+                >
+                  {/* Étiquette du créneau (horaires fixes) */}
+                  <div className="flex items-center justify-end pr-1">
+                    <span className="font-mono text-[10px] leading-tight text-muted-foreground text-right">
+                      {periodLabel(period.start, period.end)}
+                    </span>
+                  </div>
+                  {DAYS.map((day) => {
+                    // 11:15-12:10 n'existe que le mercredi
+                    if (period.mercrediOnly && day !== "Mercredi") {
+                      return (
+                        <div
+                          key={day}
+                          className="rounded-xl border border-dashed border-border/30 bg-transparent"
+                        />
+                      );
+                    }
+                    const cellSlots = (cellMap.get(`${day}|${period.start}|${period.end}`) ?? [])
+                      .sort((a, b) => a.weekType.localeCompare(b.weekType));
+                    const isMercrediOnlyRow = period.mercrediOnly;
+                    return (
+                      <div
+                        key={day}
+                        className={cn(
+                          "min-h-[76px] rounded-xl border border-border/40 bg-secondary/25 p-1.5",
+                          isMercrediOnlyRow && "bg-secondary/10",
+                        )}
+                      >
+                        {cellSlots.length === 0 ? (
+                          <div className="h-full min-h-[62px] rounded-lg bg-transparent" />
+                        ) : (
+                          <div
+                            className={cn(
+                              "grid h-full gap-1.5",
+                              cellSlots.length === 2 ? "grid-cols-2" : "grid-cols-1",
+                            )}
+                          >
+                            {cellSlots.map((slot) => {
+                              const eps = isEpsSubject(slot.subject);
+                              return (
+                                <div
+                                  key={slot._id}
+                                  style={slotStyle(slot.subject, slot.color)}
+                                  className={cn(
+                                    "relative flex flex-col justify-center rounded-lg border px-2.5 py-2 overflow-hidden shadow-sm",
+                                    slot.cancelled && "line-through decoration-destructive/70",
+                                    !eps &&
+                                      "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:brightness-110",
+                                    eps && "cursor-default",
+                                  )}
+                                  onClick={() => {
+                                    // Le sport n'a pas de devoirs : case non cliquable
+                                    if (eps) return;
+                                    onOpen(slot);
+                                  }}
+                                  title={
+                                    eps
+                                      ? "EPS — aucun devoir ni document"
+                                      : `${slot.subject} — voir les documents`
+                                  }
+                                >
+                                  <p className="text-[13px] font-bold leading-tight truncate">
+                                    {slot.cancelled && (
+                                      <Ban className="inline size-3 mr-1 text-destructive" />
+                                    )}
+                                    {slot.subject}
+                                  </p>
+                                  {slot.teacher && (
+                                    <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90 truncate">
+                                      <UserRound className="size-2.5 shrink-0" />
+                                      {slot.teacher}
+                                    </p>
+                                  )}
+                                  {slot.room && (
+                                    <p className="flex items-center gap-1 text-[10px] opacity-80 truncate italic">
+                                      <MapPin className="size-2.5 shrink-0" />
+                                      {slot.room}
+                                    </p>
+                                  )}
+                                  {slot.weekType !== "AB" && (
+                                    <span className="absolute bottom-1 right-1.5 text-[8px] font-mono opacity-70">
+                                      {slot.weekType}
+                                    </span>
+                                  )}
+                                  {eps && canEdit && (
+                                    <button
+                                      type="button"
+                                      className="absolute right-1 top-1 rounded p-1 bg-background/70 opacity-70 hover:opacity-100 cursor-pointer"
+                                      title="Modifier ce cours"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEdit(slot);
+                                      }}
+                                    >
+                                      <Pencil className="size-3" />
+                                    </button>
+                                  )}
+                                  {slot.cancelled && (
+                                    <span className="absolute top-1 right-1 text-[8px] text-destructive font-bold uppercase">
+                                      {eps ? "" : "annulé"}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </div>
         </CardContent>
@@ -375,37 +384,6 @@ function TimetableGrid({
       />
     </>
   );
-}
-
-/** Répartit les créneaux d'une journée : A et B simultanés côte à côte,
- *  AB sur toute la largeur. */
-function placeSlots(
-  daySlots: Slot[],
-  timeToY: (t: string) => number,
-  _hourPx: number,
-): Array<{ slot: Slot; left: number; width: number }> {
-  const sorted = [...daySlots].sort(
-    (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
-  );
-  return sorted.map((slot) => {
-    if (slot.weekType === "AB") return { slot, left: 1, width: 98 };
-    // Cherche un partenaire A/B qui chevauche ce créneau
-    const partner = sorted.find(
-      (s) =>
-        s._id !== slot._id &&
-        s.weekType !== "AB" &&
-        s.weekType !== slot.weekType &&
-        s.start < slot.end &&
-        slot.start < s.end,
-    );
-    if (!partner) return { slot, left: 1, width: 98 };
-    const isA = slot.weekType === "A";
-    return {
-      slot,
-      left: isA ? 1 : 50.5,
-      width: 48.5,
-    };
-  });
 }
 
 // ---------- Dialog cours + fichiers ----------
@@ -483,7 +461,7 @@ function SlotDialog({
                 )}
               </DialogTitle>
               <DialogDescription>
-                {slot.day} · {slot.start}–{slot.end}
+                {slot.day} · {periodLabel(slot.start, slot.end)}
                 {slot.weekType !== "AB"
                   ? ` · semaine ${slot.weekType}`
                   : " · toutes les semaines"}
@@ -608,7 +586,11 @@ function SlotDialog({
               }}
             >
               <Pencil className="size-4 mr-1.5" /> Modifier ce cours
-              {!isAdmin && <span className="text-xs text-muted-foreground ml-1">(la suppression est réservée aux administrateurs)</span>}
+              {!isAdmin && (
+                <span className="text-xs text-muted-foreground ml-1">
+                  (la suppression est réservée aux administrateurs)
+                </span>
+              )}
             </Button>
           </div>
         )}
@@ -877,8 +859,9 @@ function SlotForm({
   const upsert = useMutation(api.app.upsertSlot);
   const remove = useMutation(api.app.deleteSlot);
   const [day, setDay] = useState<string>(initial?.day ?? "Lundi");
-  const [start, setStart] = useState(initial?.start ?? "08:15");
-  const [end, setEnd] = useState(initial?.end ?? "09:05");
+  const [periodKey, setPeriodKey] = useState<string>(
+    initial ? `${initial.start}-${initial.end}` : "08:15-09:10",
+  );
   const [subject, setSubject] = useState(initial?.subject ?? "");
   const [teacher, setTeacher] = useState(initial?.teacher ?? "");
   const [room, setRoom] = useState(initial?.room ?? "");
@@ -891,16 +874,21 @@ function SlotForm({
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
 
+  const dayPeriods = periodsForDay(day);
+  const selectedPeriod =
+    dayPeriods.find((p) => `${p.start}-${p.end}` === periodKey) ?? dayPeriods[0];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedPeriod) return;
     setSaving(true);
     try {
       await upsert({
         slotId: initial?._id,
         classId,
         day: day as (typeof DAYS)[number],
-        start,
-        end,
+        start: selectedPeriod.start,
+        end: selectedPeriod.end,
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
@@ -937,17 +925,21 @@ function SlotForm({
     }
   };
 
-  const finMax = day === "Mercredi" ? "12:10" : "16:45";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3.5">
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">
           <Label htmlFor="sl-day">Jour</Label>
           <select
             id="sl-day"
             value={day}
-            onChange={(e) => setDay(e.target.value)}
+            onChange={(e) => {
+              setDay(e.target.value);
+              const next = periodsForDay(e.target.value);
+              if (!next.some((p) => `${p.start}-${p.end}` === periodKey)) {
+                setPeriodKey(`${next[0].start}-${next[0].end}`);
+              }
+            }}
             className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
           >
             {DAYS.map((d) => (
@@ -958,36 +950,19 @@ function SlotForm({
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="sl-room">Salle</Label>
-          <Input
-            id="sl-room"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            placeholder="304"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sl-start">Début (dès 08:15)</Label>
-          <Input
-            id="sl-start"
-            type="time"
-            value={start}
-            min="08:15"
-            onChange={(e) => setStart(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sl-end">Fin (max {finMax})</Label>
-          <Input
-            id="sl-end"
-            type="time"
-            value={end}
-            max={finMax}
-            min="08:15"
-            onChange={(e) => setEnd(e.target.value)}
-            required
-          />
+          <Label htmlFor="sl-period">Créneau</Label>
+          <select
+            id="sl-period"
+            value={periodKey}
+            onChange={(e) => setPeriodKey(e.target.value)}
+            className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm font-mono"
+          >
+            {dayPeriods.map((p) => (
+              <option key={p.id} value={`${p.start}-${p.end}`}>
+                {periodLabel(p.start, p.end)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
       <div className="space-y-1.5">
@@ -1009,6 +984,26 @@ function SlotForm({
             <option key={s} value={s} />
           ))}
         </datalist>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-teacher">Professeur</Label>
+          <Input
+            id="sl-teacher"
+            value={teacher}
+            onChange={(e) => setTeacher(e.target.value)}
+            placeholder="M. DRONY"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="sl-room">Salle</Label>
+          <Input
+            id="sl-room"
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            placeholder="304"
+          />
+        </div>
       </div>
       <div className="space-y-1.5">
         <Label>Couleur de la case</Label>
@@ -1066,15 +1061,6 @@ function SlotForm({
           ))}
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="sl-teacher">Professeur</Label>
-        <Input
-          id="sl-teacher"
-          value={teacher}
-          onChange={(e) => setTeacher(e.target.value)}
-          placeholder="Mme Bernard"
-        />
-      </div>
       <div className="flex gap-2">
         <Button type="submit" className="flex-1" disabled={saving}>
           {saving ? "Enregistrement…" : initial ? "Enregistrer" : "Ajouter le cours"}
@@ -1125,7 +1111,7 @@ function AddSlotDialog({
         <DialogHeader>
           <DialogTitle>Ajouter un cours</DialogTitle>
           <DialogDescription>
-            Créneau de l'emploi du temps de la classe.
+            Créneau fixe de l'emploi du temps de la classe.
           </DialogDescription>
         </DialogHeader>
         <SlotForm
@@ -1156,7 +1142,7 @@ function EditSlotDialog({
         <DialogHeader>
           <DialogTitle>Modifier le cours</DialogTitle>
           <DialogDescription>
-            {slot.day} · {slot.start}–{slot.end} — {slot.subject}
+            {slot.day} · {periodLabel(slot.start, slot.end)} — {slot.subject}
           </DialogDescription>
         </DialogHeader>
         <SlotForm classId={classId} initial={slot} isAdmin={isAdmin} onDone={onDone} />

@@ -113,6 +113,58 @@ export const updateProfile = mutation({
   },
 });
 
+// ---------- Modification d'email ----------
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function changeEmail(ctx: any, user: UserDoc, newEmailRaw: string) {
+  const newEmail = newEmailRaw.trim().toLowerCase();
+  if (!EMAIL_RE.test(newEmail)) {
+    throw new Error("Adresse email invalide.");
+  }
+  if (user.email && newEmail === user.email.toLowerCase()) return;
+  const taken = await ctx.db
+    .query("authAccounts")
+    .withIndex("providerAndAccountId", (q: any) =>
+      q.eq("provider", "password").eq("providerAccountId", newEmail),
+    )
+    .first();
+  if (taken) {
+    throw new Error("Cet email est déjà utilisé par un autre compte.");
+  }
+  // Met à jour le compte d'authentification (identifiant de connexion)
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q: any) =>
+      q.eq("userId", user._id).eq("provider", "password"),
+    )
+    .collect();
+  for (const a of accounts) {
+    await ctx.db.patch(a._id, { providerAccountId: newEmail });
+  }
+  await ctx.db.patch(user._id, { email: newEmail });
+}
+
+/** L'utilisateur change sa propre adresse email. */
+export const updateMyEmail = mutation({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const user = await requireUser(ctx);
+    await changeEmail(ctx, user, email);
+  },
+});
+
+/** Un administrateur global change l'email d'un utilisateur. */
+export const adminUpdateUserEmail = mutation({
+  args: { userId: v.id("users"), email: v.string() },
+  handler: async (ctx, { userId, email }) => {
+    await requireAdmin(ctx);
+    const target = await ctx.db.get(userId);
+    if (!target) throw new Error("Utilisateur introuvable");
+    await changeEmail(ctx, target as UserDoc, email);
+  },
+});
+
 // ---------- Gestion classes (admin global) ----------
 
 export const createClass = mutation({

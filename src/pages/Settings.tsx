@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   KeyRound,
   Mail,
+  Pencil,
   Save,
   Shield,
   UserCog,
@@ -35,11 +36,15 @@ const OPTIONS = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
 export default function Settings() {
   const { user, isLoading } = useAuth();
   const updateProfile = useMutation(api.app.updateProfile);
+  const updateEmail = useMutation(api.app.updateMyEmail);
 
   const [name, setName] = useState("");
   const [classId, setClassId] = useState<string>("");
   const [options, setOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
 
   const classes = (
     useQuery(api.app.listClasses) ?? []
@@ -141,12 +146,68 @@ export default function Settings() {
               />
             </div>
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Mail className="size-4 shrink-0" />
-              <span className="truncate">{user.email}</span>
-              <Badge variant="outline" className="ml-auto text-[10px] shrink-0">
-                non modifiable
-              </Badge>
+            {/* Email modifiable */}
+            <div className="space-y-1.5">
+              <Label>Adresse email (identifiant de connexion)</Label>
+              {emailEditing ? (
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="nouvel.email@exemple.fr"
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={async () => {
+                      setSavingEmail(true);
+                      try {
+                        await updateEmail({ email: newEmail });
+                        toast.success(
+                          "Email mis à jour. Connectez-vous désormais avec cette adresse.",
+                        );
+                        setEmailEditing(false);
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error && !err.message.startsWith("{")
+                            ? err.message
+                            : "Modification impossible.",
+                        );
+                      } finally {
+                        setSavingEmail(false);
+                      }
+                    }}
+                    disabled={savingEmail || !newEmail.includes("@")}
+                  >
+                    {savingEmail ? "…" : "Enregistrer"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEmailEditing(false);
+                      setNewEmail("");
+                    }}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Mail className="size-4 shrink-0" />
+                  <span className="truncate">{user.email}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 text-xs shrink-0"
+                    onClick={() => {
+                      setNewEmail(user.email ?? "");
+                      setEmailEditing(true);
+                    }}
+                  >
+                    <Pencil className="size-3 mr-1" /> Modifier
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">

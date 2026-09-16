@@ -23,7 +23,7 @@ import {
   Loader2,
   Lock,
   Mail,
-  Zap,
+  ShieldCheck,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
@@ -248,18 +248,18 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     <div className="min-h-screen bg-background bg-grid relative flex flex-col">
       <div className="absolute inset-0 bg-glow pointer-events-none" />
       <div className="relative z-10 flex-1 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md panel shadow-2xl border-border/80">
+        <Card className="w-full max-w-lg panel shadow-2xl shadow-primary/10 border-border/80">
           {mode === "signIn" && (
             <>
-              <CardHeader className="text-center">
+              <CardHeader className="text-center pb-4">
                 <button onClick={goHome} className="flex justify-center cursor-pointer" aria-label="Accueil">
-                  <img src={logo} alt="CoursFlow" width={64} height={64} className="rounded-xl mb-3 mt-2" />
+                  <img src={logo} alt="CoursFlow" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
                 </button>
-                <CardTitle className="text-xl">Connexion</CardTitle>
-                <CardDescription>Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
+                <CardTitle className="text-2xl">Connexion</CardTitle>
+                <CardDescription className="mt-1">Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
               </CardHeader>
               <form onSubmit={handleSignIn}>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <div className="relative">
@@ -267,7 +267,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       <Input id="email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="password">Mot de passe</Label>
                       <button type="button" onClick={() => go("forgot")} className="text-xs text-primary hover:underline">
@@ -281,9 +281,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
-                <CardFooter className="flex-col gap-2">
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                <CardFooter className="flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
+                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
                     Se connecter
                   </Button>
                   <p className="text-sm text-muted-foreground">
@@ -303,6 +303,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <CardTitle className="text-xl mt-2">Créer un compte</CardTitle>
                 <CardDescription>Un code de vérification vous sera envoyé par email</CardDescription>
               </CardHeader>
+              <div className="mx-6 mb-1 flex items-start gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
+                <ShieldCheck className="size-4 text-primary mt-0.5 shrink-0" />
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Les informations saisies dans ce formulaire sont hébergées de
+                  manière sécurisée et maintenues confidentielles, conformément au
+                  Règlement Général sur la Protection des Données (RGPD). Elles ne
+                  sont jamais partagées avec des tiers.
+                </p>
+              </div>
               <form onSubmit={handleSignUp}>
                 <CardContent className="space-y-5">
                   <div className="space-y-2">
@@ -332,8 +341,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
-                <CardFooter className="flex-col gap-2">
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                <CardFooter className="flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Créer mon compte
                   </Button>
@@ -374,7 +383,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {error && <p className="text-sm text-destructive text-center">{error}</p>}
                 </CardContent>
                 <CardFooter className="flex-col gap-3 pt-2">
-                  <Button type="submit" className="w-full" disabled={isLoading || otp.length !== 6}>
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading || otp.length !== 6}>
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Vérification…</> : <>Vérifier <ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
                   <Button type="button" variant="ghost" className="w-full mt-1" disabled={isLoading} onClick={handleResend}>
@@ -405,8 +414,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
-                <CardFooter className="flex-col gap-2">
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                <CardFooter className="flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
                     Envoyer le code
                   </Button>
@@ -444,7 +453,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
                 <CardFooter className="flex-col gap-3 pt-2">
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enregistrement…</> : "Changer le mot de passe"}
                   </Button>
                   <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
