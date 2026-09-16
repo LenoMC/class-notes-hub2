@@ -1,12 +1,20 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  Menu,
   Settings,
   Shield,
   X,
@@ -49,7 +57,7 @@ export function AppShell({
       ? "Responsable de classe"
       : "Élève";
 
-  const nav = (
+  const links = (
     <>
       {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink
@@ -58,7 +66,7 @@ export function AppShell({
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               isActive
                 ? "bg-primary/15 text-primary glow-ring-soft"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
@@ -70,147 +78,133 @@ export function AppShell({
         </NavLink>
       ))}
       {isAdmin && (
-        <>
-          <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Administration
-          </p>
-          <NavLink
-            to="/admin"
-            onClick={() => setMobileOpen(false)}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary/15 text-primary glow-ring-soft"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-              )
-            }
-          >
-            <Shield className="size-4" />
-            Administration
-          </NavLink>
-        </>
+        <NavLink
+          to="/admin"
+          onClick={() => setMobileOpen(false)}
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              isActive
+                ? "bg-primary/15 text-primary glow-ring-soft"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+            )
+          }
+        >
+          <Shield className="size-4" />
+          Administration
+        </NavLink>
       )}
     </>
   );
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Sidebar desktop */}
-      <aside className="fixed inset-y-0 left-0 z-20 hidden lg:flex w-60 flex-col border-r border-sidebar-border bg-sidebar">
-        <div className="flex items-center gap-2.5 h-16 px-5 border-b border-sidebar-border/60">
-          <img src="/logo.svg" alt="CoursFlow" className="size-9 rounded-lg" />
-          <span className="text-lg font-bold tracking-wide">CoursFlow</span>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">{nav}</nav>
-        <div className="border-t border-sidebar-border/60 p-3">
-          <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
-            <Avatar className="size-9 border border-sidebar-border">
-              <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
-                {initials || "?"}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{user?.name || "Utilisateur"}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{roleLabel}</p>
-            </div>
+      {/* Topbar */}
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 backdrop-blur-md">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="flex h-14 items-center gap-3">
+            {/* Burger mobile */}
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground hover:text-foreground"
-              onClick={() => navigate("/settings")}
-              title="Mon compte"
+              className="size-9 lg:hidden"
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Menu"
             >
-              <Settings className="size-4" />
+              {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-muted-foreground hover:text-foreground"
-              onClick={handleSignOut}
-              title="Se déconnecter"
-            >
-              <LogOut className="size-4" />
-            </Button>
-          </div>
-        </div>
-      </aside>
 
-      {/* Overlay mobile */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-background/70 backdrop-blur-sm lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
+            {/* Logo */}
+            <button
+              type="button"
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center gap-2 cursor-pointer shrink-0"
+              aria-label="Accueil CoursFlow"
+            >
+              <img src="/logo.svg" alt="CoursFlow" className="size-8 rounded-lg" />
+              <span className="font-bold tracking-wide hidden sm:inline">
+                CoursFlow
+              </span>
+            </button>
 
-      {/* Sidebar mobile */}
-      {mobileOpen && (
-        <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-sidebar-border bg-sidebar lg:hidden animate-bolt-pop">
-          <div className="flex items-center gap-2.5 h-16 px-5 border-b border-sidebar-border/60">
-            <img src="/logo.svg" alt="CoursFlow" className="size-9 rounded-lg" />
-            <span className="text-lg font-bold tracking-wide">CoursFlow</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto size-8"
-              onClick={() => setMobileOpen(false)}
-            >
-              <X className="size-4" />
-            </Button>
+            {/* Navigation desktop */}
+            <nav className="hidden lg:flex items-center gap-1 ml-4">{links}</nav>
+
+            <div className="flex-1" />
+
+            {/* Classe (mobile) */}
+            {user?.className && (
+              <Badge variant="secondary" className="lg:hidden shrink-0">
+                {user.className}
+              </Badge>
+            )}
+
+            {/* Profil */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-secondary/60 transition-colors cursor-pointer"
+                >
+                  <Avatar className="size-8 border border-border">
+                    <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
+                      {initials || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden md:inline text-sm font-medium max-w-32 truncate">
+                    {user?.name || "Utilisateur"}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium truncate">
+                    {user?.name || "Utilisateur"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-wide text-primary">
+                    {roleLabel}
+                  </p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => navigate("/settings")}
+                >
+                  <Settings className="mr-2 size-4" /> Mon compte
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="mr-2 size-4" /> Se déconnecter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <nav className="flex-1 px-3 py-4 space-y-1">{nav}</nav>
-          <div className="border-t border-sidebar-border/60 p-3 space-y-2">
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={() => {
-                setMobileOpen(false);
-                navigate("/settings");
-              }}
-            >
-              <Settings className="size-4" /> Mon compte
-            </Button>
-            <Button variant="outline" className="w-full gap-2" onClick={handleSignOut}>
-              <LogOut className="size-4" /> Se déconnecter
-            </Button>
-          </div>
-        </aside>
-      )}
+
+          {/* Navigation mobile dépliée */}
+          {mobileOpen && (
+            <nav className="lg:hidden pb-3 flex flex-col gap-1 animate-bolt-pop">
+              {links}
+              {user?.className && (
+                <p className="px-3 pt-1 text-xs text-muted-foreground">
+                  Classe : {user.className}
+                </p>
+              )}
+            </nav>
+          )}
+        </div>
+      </header>
 
       {/* Contenu */}
-      <div className="lg:pl-60 flex flex-col min-h-screen">
-        {/* Topbar mobile */}
-        <header className="lg:hidden sticky top-0 z-10 flex items-center gap-3 h-14 px-4 border-b border-border/60 bg-background/85 backdrop-blur-sm">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Menu"
-          >
-            <span className="flex flex-col gap-1">
-              <span className="block w-5 h-0.5 bg-foreground rounded" />
-              <span className="block w-5 h-0.5 bg-foreground rounded" />
-              <span className="block w-5 h-0.5 bg-foreground rounded" />
-            </span>
-          </Button>
-          <img src="/logo.svg" alt="CoursFlow" className="size-8 rounded-lg" />
-          <span className="font-bold tracking-wide">CoursFlow</span>
-          {user?.className && (
-            <Badge variant="secondary" className="ml-auto">
-              {user.className}
-            </Badge>
-          )}
-        </header>
-
-        <main className="relative flex-1 mx-auto w-full max-w-6xl px-4 py-8">
-          {children}
-        </main>
-        <footer className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
-          CoursFlow — votre classe, documentée.
-        </footer>
-      </div>
+      <main className="relative mx-auto w-full max-w-6xl px-3 sm:px-4 py-5 sm:py-8">
+        {children}
+      </main>
+      <footer className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
+        CoursFlow — votre classe, documentée.
+      </footer>
     </div>
   );
 }

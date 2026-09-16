@@ -3,6 +3,11 @@ import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError } from "../lib/subjects";
+import {
+  computeWeekState,
+  todayDayString,
+  WEEK_ANCHOR_DEFAULT,
+} from "../lib/weeks";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // ---------- Rôles & helpers ----------
@@ -177,92 +182,9 @@ export const deleteClass = mutation({
 
 // ---------- Vacances & alternance A/B ----------
 
-// Règle établie avec l'utilisateur : le lundi 8 septembre 2025 est une semaine A.
-const ANCHOR_DEFAULT = "2025-09-08";
-
-function dayToString(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function mondayOf(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const shift = (d.getDay() + 6) % 7; // 0 = lundi
-  d.setDate(d.getDate() - shift);
-  return d;
-}
-
-function toUTC(day: string): number {
-  const [y, m, d] = day.split("-").map(Number);
-  return Date.UTC(y, m - 1, d);
-}
-
-function overlaps(anchor: { startDay: string }, h: { startDay: string; endDay: string }): boolean {
-  // Semaine (lundi->dimanche) de l'ancre vs période de vacances
-  const a = toUTC(anchor.startDay);
-  const aEnd = a + 6 * 24 * 3600 * 1000;
-  return a <= toUTC(h.endDay) && aEnd >= toUTC(h.startDay);
-}
-
-function nextMonday(after: string): string {
-  const [y, m, d] = after.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() + 1);
-  while (date.getDay() !== 1) date.setDate(date.getDate() + 1);
-  return dayToString(date);
-}
-
-function computeWeekState(
-  today: string,
-  anchorRaw: string | null,
-  holidays: Array<{ label: string; startDay: string; endDay: string }>,
-): { week: "A" | "B"; isHoliday: boolean; holidayLabel: string | null; nextSchoolMonday: string | null } {
-  const anchor = anchorRaw ?? ANCHOR_DEFAULT;
-  const t = toUTC(today);
-
-  // Vacances en cours aujourd'hui ?
-  for (const h of holidays) {
-    if (t >= toUTC(h.startDay) && t <= toUTC(h.endDay)) {
-      return {
-        week: "A", // valeur neutre : l'alternance est suspendue
-        isHoliday: true,
-        holidayLabel: h.label ?? null,
-        nextSchoolMonday: nextMonday(h.endDay),
-      };
-    }
-  }
-
-  // Ancres à exclure (semaines bloquées par des vacances)
-  const blocked = new Set<string>();
-  for (const h of holidays) {
-    let cursor = mondayOf(new Date(toUTC(h.startDay)));
-    const end = new Date(toUTC(h.endDay));
-    while (cursor.getTime() <= end.getTime()) {
-      blocked.add(dayToString(cursor));
-      cursor.setDate(cursor.getDate() + 7);
-    }
-    // L'ancre peut tomber en milieu de semaine de vacances
-    const anchorMon = mondayOf(new Date(toUTC(anchor)));
-    if (overlaps({ startDay: dayToString(anchorMon) }, h)) blocked.add(dayToString(anchorMon));
-  }
-
-  // Nombre de semaines A écoulées depuis l'ancre (hors vacances)
-  const cursor = mondayOf(new Date(toUTC(anchor)));
-  const todayMon = mondayOf(new Date(t));
-  let aCount = 0;
-  while (cursor.getTime() <= todayMon.getTime()) {
-    if (!blocked.has(dayToString(cursor))) aCount += 1;
-    cursor.setDate(cursor.getDate() + 7);
-  }
-  return {
-    week: aCount % 2 === 1 ? "A" : "B",
-    isHoliday: false,
-    holidayLabel: null,
-    nextSchoolMonday: null,
-  };
-}
+// Règle établie avec l'utilisateur : la semaine du 14 septembre 2026 est une
+// semaine A (celle du 21 au 25 est une semaine B, et ainsi de suite).
+const ANCHOR_DEFAULT = WEEK_ANCHOR_DEFAULT;
 
 function getAnchorRaw(anchor: Doc<"weekAnchor"> | null): string | null {
   return anchor?.startDay ?? null;
@@ -272,8 +194,7 @@ function getAnchorRaw(anchor: Doc<"weekAnchor"> | null): string | null {
 export const weekState = query({
   args: {},
   handler: async (ctx) => {
-    const now = new Date();
-    const today = dayToString(now);
+    const today = todayDayString();
     const anchor = await ctx.db.query("weekAnchor").first();
     const holidays = await ctx.db.query("holidays").collect();
     return computeWeekState(
@@ -352,7 +273,9 @@ export const setWeekAnchor = mutation({
 
 // ---------- Emploi du temps ----------
 
-const MERCREDI_LIMITE = "12:10";
+const DEBUT_MIN = "08:15"; // les cours commencent au plus tôt à 8h15
+const FIN_MAX = "16:45"; // fin de journée (lun, mar, jeu, ven)
+const MERCREDI_LIMITE = "12:10"; // le mercredi, fin au plus tard à 12h10
 const WEEKEND_DAYS = ["Samedi", "Dimanche"];
 
 function validateSlot(
@@ -362,6 +285,7 @@ function validateSlot(
   start: string,
   end: string,
   subject: string,
+  color?: string,
 ) {
   if (!user.isAdmin && !(user.isClassAdmin && user.classId === targetClassId)) {
     throw new Error("Réservé aux admins");
@@ -372,11 +296,22 @@ function validateSlot(
   if (WEEKEND_DAYS.includes(day)) {
     throw new Error("Il n'y a pas cours le week-end.");
   }
-  if (day === "Mercredi" && end > MERCREDI_LIMITE) {
-    throw new Error(`Le mercredi, les cours s'arrêtent au plus tard à ${MERCREDI_LIMITE}.`);
+  if (start < DEBUT_MIN) {
+    throw new Error("Les cours commencent au plus tôt à 08:15.");
+  }
+  const finMax = day === "Mercredi" ? MERCREDI_LIMITE : FIN_MAX;
+  if (end > finMax) {
+    throw new Error(
+      day === "Mercredi"
+        ? "Le mercredi, les cours s'arrêtent au plus tard à 12:10."
+        : "Les cours s'arrêtent au plus tard à 16:45.",
+    );
   }
   if (!subject.trim()) {
     throw new Error("Matière requise");
+  }
+  if (color !== undefined && color !== "" && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+    throw new Error("Couleur invalide.");
   }
 }
 
@@ -390,6 +325,7 @@ function slotView(slot: Doc<"timetableSlots">) {
     teacher: slot.teacher,
     room: slot.room,
     weekType: slot.weekType ?? "AB",
+    color: slot.color,
     cancelled: !!slot.cancelled,
     cancellationReason: slot.cancellationReason,
   };
@@ -454,6 +390,7 @@ export const upsertSlot = mutation({
     teacher: v.optional(v.string()),
     room: v.optional(v.string()),
     weekType: v.optional(weekTypeValidator),
+    color: v.optional(v.string()), // hex #RRGGBB, sinon couleur de la matière
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -461,8 +398,17 @@ export const upsertSlot = mutation({
       ? (await ctx.db.get(args.slotId))?.classId
       : args.classId;
     if (!targetClassId) throw new Error("Créneau introuvable");
-    validateSlot(user, targetClassId, args.day, args.start, args.end, args.subject);
+    validateSlot(
+      user,
+      targetClassId,
+      args.day,
+      args.start,
+      args.end,
+      args.subject,
+      args.color,
+    );
     const { slotId, ...rest } = args;
+    if (!rest.color) delete rest.color;
     if (slotId) {
       await ctx.db.patch(slotId, rest);
       return slotId;
@@ -498,8 +444,11 @@ export const deleteSlot = mutation({
     const user = await requireUser(ctx);
     const slot = await ctx.db.get(slotId);
     if (!slot) throw new Error("Créneau introuvable");
-    if (!user.isAdmin && !(user.isClassAdmin && user.classId === slot.classId)) {
-      throw new Error("Réservé aux admins");
+    // Les responsables de classe peuvent modifier mais pas supprimer.
+    if (!user.isAdmin) {
+      throw new Error(
+        "Seuls les administrateurs globaux peuvent supprimer un cours.",
+      );
     }
     const files = await ctx.db
       .query("courseFiles")

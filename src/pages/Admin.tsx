@@ -24,6 +24,14 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { optionRuleError } from "@/lib/subjects";
+import {
+  dayToUTC,
+  monthWeeks,
+  schoolYearStart,
+  utcToDay,
+  weekLabelFor,
+  DAY_MS,
+} from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
   CalendarOff,
@@ -887,6 +895,149 @@ function OptionsDialog({
 
 // ---------- Onglet Vacances & alternance A/B ----------
 
+const MOIS = [
+  "Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
+  "Mars", "Avril", "Mai", "Juin", "Juillet", "Août",
+];
+
+/** Calendrier annuel : les semaines sont « coloriées » A, B ou vacances. */
+function YearCalendar({
+  anchor,
+  holidays,
+  onPaint,
+}: {
+  anchor: string;
+  holidays: Array<{ label: string; startDay: string; endDay: string }>;
+  onPaint: (startDay: string, endDay: string) => void;
+}) {
+  const [painting, setPainting] = useState(false);
+  const [selStart, setSelStart] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  const { year, month: sepMonth } = schoolYearStart();
+  // 12 mois de septembre à août
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const m = (sepMonth + i) % 12;
+    const y = sepMonth + i > 11 ? year + 1 : year;
+    return { y, m, label: MOIS[i] };
+  });
+
+  const holidayByDay = new Map<string, string>();
+  for (const h of holidays) {
+    let c = dayToUTC(h.startDay);
+    const end = dayToUTC(h.endDay);
+    while (c <= end) {
+      holidayByDay.set(utcToDay(c), h.label);
+      c += DAY_MS;
+    }
+  }
+
+  const inSelection = (utc: number): boolean => {
+    if (!painting || !selStart || !preview) return false;
+    const s = Math.min(dayToUTC(selStart), dayToUTC(preview));
+    const e = Math.max(dayToUTC(selStart), dayToUTC(preview));
+    return utc >= s && utc <= e;
+  };
+
+  const handleDayClick = (utc: number) => {
+    const day = utcToDay(utc);
+    if (!painting) {
+      setPainting(true);
+      setSelStart(day);
+      setPreview(day);
+    } else if (!selStart) {
+      setSelStart(day);
+      setPreview(day);
+    } else {
+      const s = selStart <= day ? selStart : day;
+      const e = selStart <= day ? day : selStart;
+      onPaint(s, e);
+      setPainting(false);
+      setSelStart(null);
+      setPreview(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded-sm bg-sky-400/60" /> Semaine A
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded-sm bg-indigo-400/60" /> Semaine B
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded-sm bg-amber-400/70" /> Vacances
+        </span>
+        <span>
+          {painting
+            ? "Cliquez sur le dernier jour de la période…"
+            : "Cliquez sur un premier jour puis un dernier jour pour déclarer des vacances."}
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {months.map(({ y, m, label }) => (
+          <div key={`${y}-${m}`} className="rounded-lg border border-border/70 bg-secondary/30 p-2">
+            <p className="text-xs font-semibold mb-1.5 text-center">
+              {label} {y}
+            </p>
+            <div className="grid grid-cols-8 gap-0.5">
+              <span />
+              {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
+                <span key={i} className="text-[8px] text-muted-foreground text-center">{d}</span>
+              ))}
+              {monthWeeks(y, m).map((week, wi) => {
+                const label = weekLabelFor(week[0], anchor, holidays);
+                return (
+                  <div key={wi} className="contents">
+                    <span
+                      className={cn(
+                        "text-[8px] font-mono text-center leading-[18px]",
+                        label === "A" && "text-sky-300",
+                        label === "B" && "text-indigo-300",
+                        label === "vac" && "text-amber-300",
+                      )}
+                    >
+                      {label === "vac" ? "v" : label}
+                    </span>
+                    {week.map((utc) => {
+                      const d = new Date(utc);
+                      const inMonth = d.getUTCMonth() === m;
+                      const day = utcToDay(utc);
+                      const isHol = holidayByDay.has(day);
+                      const weekend = [0, 6].includes(d.getUTCDay());
+                      return (
+                        <button
+                          key={utc}
+                          type="button"
+                          onClick={() => handleDayClick(utc)}
+                          onMouseEnter={() => painting && setPreview(day)}
+                          className={cn(
+                            "h-[18px] rounded-sm text-[8px] leading-[18px] text-center transition-colors",
+                            inMonth ? "cursor-pointer" : "opacity-25",
+                            !inMonth && "pointer-events-none",
+                            inSelection(utc) && "ring-2 ring-amber-300 bg-amber-400/40",
+                            !inSelection(utc) && isHol && "bg-amber-400/70 text-amber-950 font-semibold",
+                            !inSelection(utc) && !isHol && weekend && "bg-muted/30 text-muted-foreground",
+                            !inSelection(utc) && !isHol && !weekend && "hover:bg-primary/30",
+                          )}
+                        >
+                          {d.getUTCDate()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function HolidaysTab() {
   const weekState = useQuery(api.app.weekState) as WeekState | undefined;
   const anchor = useQuery(api.app.getWeekAnchor);
@@ -959,141 +1110,175 @@ function HolidaysTab() {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="panel border-border/70">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <RefreshCw className="size-5 text-primary" /> Alternance des semaines A / B
-          </CardTitle>
-          <CardDescription>
-            Les semaines alternent automatiquement : A, B, A, B… L'alternance
-            s'arrête pendant les vacances et reprend où elle s'était arrêtée à la
-            rentrée suivante.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border border-border/70 bg-secondary/40 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-              Semaine en cours
-            </p>
-            {weekState?.isHoliday ? (
-              <p className="text-lg font-semibold text-amber-300">
-                {weekState.holidayLabel ?? "Vacances"} — alternance en pause
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="panel border-border/70">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <RefreshCw className="size-5 text-primary" /> Alternance des semaines A / B
+            </CardTitle>
+            <CardDescription>
+              Les semaines alternent automatiquement : A, B, A, B… L'alternance
+              s'arrête pendant les vacances et reprend où elle s'était arrêtée.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-border/70 bg-secondary/40 px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                Semaine en cours
               </p>
+              {weekState?.isHoliday ? (
+                <p className="text-lg font-semibold text-amber-300">
+                  {weekState.holidayLabel ?? "Vacances"} — alternance en pause
+                </p>
+              ) : (
+                <p className="text-lg font-semibold">
+                  Semaine <span className="text-primary font-mono">{weekState?.week ?? "…"}</span>
+                  {weekState?.nextSchoolMonday && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      reprise le {formatDay(weekState.nextSchoolMonday)}
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="anchor-day">
+                Semaine de référence (un lundi situé sur une semaine A)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="anchor-day"
+                  type="date"
+                  value={anchorDate || anchor?.startDay || ""}
+                  onChange={(e) => setAnchorDate(e.target.value)}
+                  className="flex-1"
+                />
+                <Button onClick={handleSaveAnchor} disabled={savingAnchor} className="shrink-0">
+                  {savingAnchor ? "…" : "Enregistrer"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Référence actuelle : semaine du {formatDay(anchor?.startDay)}.
+                Modifiez-la uniquement si le décompte est décalé.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="panel border-border/70">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CalendarOff className="size-5 text-primary" /> Ajouter une période
+            </CardTitle>
+            <CardDescription>
+              Pendant les vacances, plus aucun cours n'est affiché et l'alternance
+              A/B est suspendue.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form onSubmit={handleAddHoliday} className="space-y-2 rounded-lg border border-border/70 bg-secondary/30 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="hol-label">Nom (ex. Vacances de la Toussaint)</Label>
+                <Input
+                  id="hol-label"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Vacances d'hiver"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="hol-start">Du</Label>
+                  <Input
+                    id="hol-start"
+                    type="date"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="hol-end">Au (inclus)</Label>
+                  <Input
+                    id="hol-end"
+                    type="date"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={adding}>
+                {adding ? "Ajout…" : "Ajouter la période"}
+              </Button>
+            </form>
+
+            {!holidays ? (
+              <Skeleton className="h-16 w-full" />
+            ) : holidays.length > 0 ? (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {holidays.map((h) => (
+                  <div
+                    key={h._id}
+                    className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2"
+                  >
+                    <CalendarOff className="size-4 text-amber-300 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{h.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Du {formatDay(h.startDay)} au {formatDay(h.endDay)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => handleDeleteHoliday(h._id)}
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <p className="text-lg font-semibold">
-                Semaine <span className="text-primary font-mono">{weekState?.week ?? "…"}</span>
-                {weekState?.nextSchoolMonday && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    reprise le {formatDay(weekState.nextSchoolMonday)}
-                  </span>
-                )}
+              <p className="text-sm text-muted-foreground">
+                Aucune période configurée — ou colorez-les directement sur le
+                calendrier ci-dessous.
               </p>
             )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="anchor-day">
-              Semaine de référence (un lundi situé sur une semaine A)
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="anchor-day"
-                type="date"
-                value={anchorDate || anchor?.startDay || ""}
-                onChange={(e) => setAnchorDate(e.target.value)}
-                className="flex-1"
-              />
-              <Button onClick={handleSaveAnchor} disabled={savingAnchor} className="shrink-0">
-                {savingAnchor ? "…" : "Enregistrer"}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Référence actuelle : semaine du {formatDay(anchor?.startDay)}.
-              Modifiez-la uniquement si le décompte est décalé.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="panel border-border/70">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <CalendarOff className="size-5 text-primary" /> Périodes de vacances
-          </CardTitle>
+          <CardTitle className="text-lg">Calendrier de l'année scolaire</CardTitle>
           <CardDescription>
-            Pendant une période de vacances, plus aucun cours n'est affiché et
-            l'alternance A/B est suspendue.
+            Les semaines sont coloriées automatiquement A, B ou vacances. Cliquez
+            sur un premier jour puis un dernier jour pour déclarer une période de
+            vacances.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <form onSubmit={handleAddHoliday} className="space-y-2 rounded-lg border border-border/70 bg-secondary/30 p-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="hol-label">Nom (ex. Vacances de la Toussaint)</Label>
-              <Input
-                id="hol-label"
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="Vacances d'hiver"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="hol-start">Du</Label>
-                <Input
-                  id="hol-start"
-                  type="date"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="hol-end">Au (inclus)</Label>
-                <Input
-                  id="hol-end"
-                  type="date"
-                  value={end}
-                  onChange={(e) => setEnd(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <Button type="submit" className="w-full" disabled={adding}>
-              {adding ? "Ajout…" : "Ajouter la période"}
-            </Button>
-          </form>
-
-          {!holidays ? (
-            <Skeleton className="h-20 w-full" />
-          ) : holidays.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Aucune période configurée. L'alternance A/B sera continue.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {holidays.map((h) => (
-                <div
-                  key={h._id}
-                  className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2"
-                >
-                  <CalendarOff className="size-4 text-amber-300 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{h.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Du {formatDay(h.startDay)} au {formatDay(h.endDay)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={() => handleDeleteHoliday(h._id)}
-                  >
-                    <Trash2 className="size-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+        <CardContent>
+          {anchor && holidays && (
+            <YearCalendar
+              anchor={anchor.startDay}
+              holidays={holidays.map((h) => ({
+                label: h.label,
+                startDay: h.startDay,
+                endDay: h.endDay,
+              }))}
+              onPaint={(s, e) =>
+                addHoliday({
+                  label: "Vacances",
+                  startDay: s,
+                  endDay: e,
+                })
+                  .then(() => toast.success("Période de vacances ajoutée."))
+                  .catch(() => toast.error("Ajout impossible."))
+              }
+            />
           )}
         </CardContent>
       </Card>

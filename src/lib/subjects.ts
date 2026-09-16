@@ -1,4 +1,11 @@
 // Couleurs et règles par matière — partagé entre le backend Convex et le frontend.
+// Couleurs reprises de l'emploi du temps réel (Pronote) fourni par l'utilisateur :
+// Vert = Technologie & SVT · Bleu = Français · Rose = Anglais
+// Rouge saumon = Mathématiques · Jaune olive = Histoire-Géo
+// Saumon pâle = Physique-Chimie · Gris clair = Allemand · Violet = Latin
+// Gris bleuté = LCE/LLC · Violet pâle = EPS · Bleu clair = Arts · Beige = Musique.
+
+import type { CSSProperties } from "react";
 
 export function normalizeSubject(subject: string): string {
   return subject
@@ -24,40 +31,106 @@ export function subjectKey(subject: string): string {
   if (/anglais/.test(n)) return "anglais";
   if (/allemand|german/.test(n)) return "allemand";
   if (/espagnol/.test(n)) return "espagnol";
-  if (/latin/.test(n)) return "latin";
-  if (/\blce\b/.test(n)) return "lce";
+  if (/latin|\blca\b/.test(n)) return "latin";
+  if (/\blce\b|llc/.test(n)) return "lce";
   if (/\bsvt\b|sciences\s*vie/.test(n)) return "svt";
   if (/techno/.test(n)) return "technologie";
-  if (/arts?\s*plastiques|\barts?\b/.test(n)) return "arts";
+  if (/arts?\s*plastiques/.test(n)) return "arts";
   if (/musique/.test(n)) return "musique";
   if (/vie\s*de\s*classe/.test(n)) return "vieclasse";
   return "default";
 }
 
-/** Couleurs par matière (tableau roulant de l'EDT). */
-const COLORS: Record<string, string> = {
-  francais: "bg-sky-500/15 border-sky-400/40 text-sky-100",
-  mathematiques: "bg-rose-500/15 border-rose-400/40 text-rose-100",
-  anglais: "bg-pink-500/15 border-pink-400/40 text-pink-100",
-  allemand: "bg-amber-500/15 border-amber-400/40 text-amber-100",
-  espagnol: "bg-orange-500/15 border-orange-400/40 text-orange-100",
-  latin: "bg-indigo-500/15 border-indigo-400/40 text-indigo-100",
-  lce: "bg-violet-500/15 border-violet-400/40 text-violet-100",
-  histoire: "bg-yellow-500/15 border-yellow-400/40 text-yellow-100",
-  physiquechimie: "bg-teal-500/15 border-teal-400/40 text-teal-100",
-  svt: "bg-emerald-500/15 border-emerald-400/40 text-emerald-100",
-  technologie: "bg-lime-500/15 border-lime-400/40 text-lime-100",
-  eps: "bg-purple-400/10 border-purple-300/30 text-purple-100",
-  arts: "bg-cyan-500/15 border-cyan-400/40 text-cyan-100",
-  musique: "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-100",
-  vieclasse: "bg-slate-400/10 border-slate-300/30 text-slate-100",
+/** Couleur de référence de chaque matière (identique à l'EDT réel). */
+export const SUBJECT_HEX: Record<string, string> = {
+  francais: "#3b6bc7", // bleu
+  technologie: "#5f9c57", // vert
+  svt: "#5f9c57", // vert
+  anglais: "#e57fb1", // rose
+  mathematiques: "#cd6155", // rouge saumon
+  histoire: "#b5b35c", // jaune olive
+  physiquechimie: "#d99a76", // saumon pâle
+  allemand: "#aeb6c4", // gris clair
+  latin: "#8a7cc2", // violet
+  lce: "#7d8aa8", // gris bleuté
+  eps: "#c3b6e8", // violet pâle
+  arts: "#8fb8d8", // bleu clair
+  musique: "#c2b49a", // beige
+  espagnol: "#d9924e", // orange doux
+  vieclasse: "#9aa2b1", // gris neutre
 };
 
-const DEFAULT_COLOR = "bg-primary/10 border-primary/40 text-primary";
+const DEFAULT_HEX = "#5b74c9"; // bleu électrique du thème
 
-export function subjectColor(subject: string): string {
-  return COLORS[subjectKey(subject)] ?? DEFAULT_COLOR;
+export function subjectHex(subject: string): string {
+  return SUBJECT_HEX[subjectKey(subject)] ?? DEFAULT_HEX;
 }
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function lighten(hex: string, amount = 0.65): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+/** Style d'une « pastille » matière (badge compact). */
+export function subjectStyle(
+  subject: string,
+  colorOverride?: string | null,
+): CSSProperties {
+  const hex = colorOverride || subjectHex(subject);
+  return {
+    backgroundColor: hexToRgba(hex, 0.3),
+    borderColor: hexToRgba(hex, 0.65),
+    color: lighten(hex, 0.7),
+  };
+}
+
+/** Style d'une case de l'emploi du temps (fond plus visible). */
+export function slotStyle(
+  subject: string,
+  colorOverride?: string | null,
+): CSSProperties {
+  const hex = colorOverride || subjectHex(subject);
+  return {
+    backgroundColor: hexToRgba(hex, 0.38),
+    borderColor: hexToRgba(hex, 0.7),
+    color: "#f4f6fb",
+  };
+}
+
+/** Couleur par défaut d'une matière (utilise la couleur officielle). */
+export function defaultColorFor(subject: string): string | undefined {
+  return SUBJECT_HEX[subjectKey(subject)];
+}
+
+/** Palette proposée à la création d'un cours (couleur libre). */
+export const COLOR_CHOICES: Array<{ name: string; hex: string }> = [
+  { name: "Bleu — Français", hex: "#3b6bc7" },
+  { name: "Vert — Techno / SVT", hex: "#5f9c57" },
+  { name: "Rose — Anglais", hex: "#e57fb1" },
+  { name: "Rouge — Mathématiques", hex: "#cd6155" },
+  { name: "Jaune olive — Histoire-Géo", hex: "#b5b35c" },
+  { name: "Saumon — Physique-Chimie", hex: "#d99a76" },
+  { name: "Gris clair — Allemand", hex: "#aeb6c4" },
+  { name: "Violet — Latin", hex: "#8a7cc2" },
+  { name: "Gris bleuté — LCE", hex: "#7d8aa8" },
+  { name: "Violet pâle — EPS", hex: "#c3b6e8" },
+  { name: "Bleu clair — Arts Plastiques", hex: "#8fb8d8" },
+  { name: "Beige — Musique", hex: "#c2b49a" },
+  { name: "Orange — Espagnol", hex: "#d9924e" },
+  { name: "Gris — Vie de classe", hex: "#9aa2b1" },
+];
 
 /** Règles des options : au moins une LV2 (Allemand ou Espagnol), jamais les
  *  deux, 3 options maximum. LCE et Latin se cumulent avec l'une des deux LV2. */

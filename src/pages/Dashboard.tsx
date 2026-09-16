@@ -13,7 +13,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { optionRuleError, subjectColor } from "@/lib/subjects";
+import { optionRuleError, subjectStyle } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -319,10 +319,11 @@ function TodaySchedule({
 }) {
   const week: "A" | "B" = weekState?.week ?? "A";
   const isHoliday = !!weekState?.isHoliday;
-  const slots = useQuery(
-    api.app.listMySlots,
-    isHoliday ? "skip" : { week },
-  ) ?? [];
+  const slots =
+    useQuery(
+      api.app.listMySlots,
+      isHoliday ? "skip" : { week },
+    ) ?? [];
   const todaySlots = useMemo(
     () =>
       [...slots]
@@ -373,7 +374,10 @@ function TodaySchedule({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      <span className={cn("rounded border px-1.5 py-0.5 mr-2", subjectColor(slot.subject))}>
+                      <span
+                        className="rounded border px-1.5 py-0.5 mr-2"
+                        style={subjectStyle(slot.subject, (slot as { color?: string }).color)}
+                      >
                         {slot.subject}
                       </span>
                       {slot.cancelled && (

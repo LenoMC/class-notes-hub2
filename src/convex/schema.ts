@@ -87,6 +87,7 @@ const schema = defineSchema(
       teacher: v.optional(v.string()),
       room: v.optional(v.string()),
       weekType: v.optional(weekTypeValidator), // A, B ou AB (défaut : AB)
+      color: v.optional(v.string()), // couleur de la case (hex), sinon couleur de la matière
       cancelled: v.optional(v.boolean()), // cours annulé par un admin
       cancellationReason: v.optional(v.string()),
       createdAt: v.number(),

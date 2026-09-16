@@ -304,7 +304,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <CardDescription>Un code de vérification vous sera envoyé par email</CardDescription>
               </CardHeader>
               <form onSubmit={handleSignUp}>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="su-name">Prénom & nom</Label>
                     <Input id="su-name" name="name" type="text" placeholder="Marie Dupont" disabled={isLoading} />
@@ -323,7 +323,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       <Input id="su-password" name="password" type="password" placeholder="8 caractères minimum" className="pl-9" disabled={isLoading} required minLength={8} />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-1">
                     <Label htmlFor="su-confirm">Confirmer le mot de passe</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -373,11 +373,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </div>
                   {error && <p className="text-sm text-destructive text-center">{error}</p>}
                 </CardContent>
-                <CardFooter className="flex-col gap-2">
+                <CardFooter className="flex-col gap-3 pt-2">
                   <Button type="submit" className="w-full" disabled={isLoading || otp.length !== 6}>
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Vérification…</> : <>Vérifier <ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={handleResend}>
+                  <Button type="button" variant="ghost" className="w-full mt-1" disabled={isLoading} onClick={handleResend}>
                     Vous n'avez rien reçu ? Renvoyer un code
                   </Button>
                   <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
@@ -425,7 +425,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <CardDescription>Code envoyé à {pendingEmail}. Consultez votre boîte mail.</CardDescription>
               </CardHeader>
               <form onSubmit={handleReset}>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="rs-code">Code reçu par email</Label>
                     <Input id="rs-code" name="code" inputMode="numeric" placeholder="123456" disabled={isLoading} required />
@@ -437,13 +437,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       <Input id="rs-password" name="newPassword" type="password" placeholder="8 caractères minimum" className="pl-9" disabled={isLoading} required minLength={8} />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-1">
                     <Label htmlFor="rs-confirm">Confirmer</Label>
                     <Input id="rs-confirm" name="confirm" type="password" placeholder="••••••••" disabled={isLoading} required />
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
-                <CardFooter className="flex-col gap-2">
+                <CardFooter className="flex-col gap-3 pt-2">
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enregistrement…</> : "Changer le mot de passe"}
                   </Button>
