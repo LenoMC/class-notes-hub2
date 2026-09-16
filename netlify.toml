@@ -1,16 +1,10 @@
-# Netlify configuration — Podcast Manager (Vite + React SPA on Convex)
-# The backend (database, storage, auth, emails) stays on Convex cloud;
-# Netlify only serves the static build. VITE_CONVEX_URL must be set in
-# Netlify's "Site configuration → Environment variables".
-
 [build]
-  command = "npx convex deploy --cmd 'npm run build'"
+  command = "npx convex deploy && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
 
-# SPA fallback: serve index.html for client-side routes like /auth, /dashboard
 [[redirects]]
   from = "/*"
   to = "/"
