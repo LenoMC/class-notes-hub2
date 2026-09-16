@@ -7,6 +7,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,7 +34,6 @@ import {
   UserCog,
   Users,
   X,
-  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -53,9 +59,6 @@ export default function Admin() {
             </CardDescription>
           </CardHeader>
         </Card>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          {user.email}
-        </p>
       </AppShell>
     );
   }
@@ -146,7 +149,7 @@ function ClassesTab() {
         <CardHeader>
           <CardTitle className="text-lg">Nouvelle classe</CardTitle>
           <CardDescription>
-            Ex : « 3ème A », « 4ème B ». Les élèves la choisiront au questionnaire.
+            Ex. « 3ème A », « 4ème B ». Les élèves la choisiront au questionnaire.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -163,8 +166,8 @@ function ClassesTab() {
         <CardHeader>
           <CardTitle className="text-lg">Classes prédéfinies</CardTitle>
           <CardDescription>
-            Renomme ou supprime. Supprimer une classe efface aussi son EDT et ses
-            fichiers.
+            Renommez ou supprimez. Supprimer une classe efface aussi son emploi du
+            temps et ses fichiers.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -243,15 +246,14 @@ function TimetableAdminTab() {
       <CardHeader>
         <CardTitle className="text-lg">Emploi du temps par classe</CardTitle>
         <CardDescription>
-          Choisis une classe puis gérez ses créneaux. Tu peux aussi ajouter des cours
-          depuis l'onglet EDT côté classe.
+          Choisissez une classe puis gérez ses créneaux, semaine A et semaine B.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {!classes ? (
           <Skeleton className="h-24 w-full" />
         ) : classes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Crée d'abord une classe.</p>
+          <p className="text-sm text-muted-foreground">Créez d'abord une classe.</p>
         ) : (
           <>
             <div className="flex flex-wrap gap-2 mb-4">
@@ -280,7 +282,8 @@ function TimetableAdminTab() {
 }
 
 function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
-  const slots = useQuery(api.app.listSlots, { classId });
+  const [week, setWeek] = useState<"A" | "B" | "AB">("AB");
+  const slots = useQuery(api.app.listSlots, { classId, week: week === "AB" ? undefined : week });
   const upsert = useMutation(api.app.upsertSlot);
   const remove = useMutation(api.app.deleteSlot);
   const [day, setDay] = useState<string>("Lundi");
@@ -289,6 +292,7 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
   const [subject, setSubject] = useState("");
   const [teacher, setTeacher] = useState("");
   const [room, setRoom] = useState("");
+  const [weekType, setWeekType] = useState<"A" | "B" | "AB">("AB");
   const [saving, setSaving] = useState(false);
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -303,6 +307,7 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
+        weekType,
       });
       toast.success("Créneau ajouté.");
       setSubject("");
@@ -356,6 +361,19 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           </div>
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="adm-week">Semaine</Label>
+          <select
+            id="adm-week"
+            value={weekType}
+            onChange={(e) => setWeekType(e.target.value as "A" | "B" | "AB")}
+            className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+          >
+            <option value="AB">Toutes les semaines (A et B)</option>
+            <option value="A">Semaine A uniquement</option>
+            <option value="B">Semaine B uniquement</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="adm-subject">Matière</Label>
           <Input id="adm-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Mathématiques" required />
         </div>
@@ -369,9 +387,22 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
       </form>
 
       <div>
-        <p className="text-sm font-medium mb-2">
-          Créneaux ({slots?.length ?? 0})
-        </p>
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+          <p className="text-sm font-medium">Créneaux ({slots?.length ?? 0})</p>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(["A", "B", "AB"] as const).map((w) => (
+              <Button
+                key={w}
+                variant={week === w ? "default" : "ghost"}
+                size="sm"
+                className="rounded-none font-mono h-7 text-xs"
+                onClick={() => setWeek(w)}
+              >
+                {w === "AB" ? "A + B" : w}
+              </Button>
+            ))}
+          </div>
+        </div>
         {!slots ? (
           <Skeleton className="h-40 w-full" />
         ) : slots.length === 0 ? (
@@ -395,11 +426,19 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
                         {slot.start}–{slot.end}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{slot.subject}</p>
+                        <p className="truncate text-sm font-medium">
+                          {slot.subject}
+                          {slot.cancelled && (
+                            <span className="ml-2 text-xs text-destructive">(annulé)</span>
+                          )}
+                        </p>
                         {slot.teacher && (
                           <p className="truncate text-xs text-muted-foreground">{slot.teacher}</p>
                         )}
                       </div>
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {slot.weekType === "AB" ? "A+B" : slot.weekType}
+                      </Badge>
                       {slot.room && (
                         <Badge variant="outline" className="text-[10px]">{slot.room}</Badge>
                       )}
@@ -434,8 +473,9 @@ function UsersTab() {
     patch: {
       isAdmin?: boolean;
       isClassAdmin?: boolean;
+      adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
-      option?: (typeof OPTIONS)[number] | null;
+      options?: (typeof OPTIONS)[number][];
     },
   ) => {
     try {
@@ -453,8 +493,9 @@ function UsersTab() {
           <UserCog className="size-5 text-primary" /> Utilisateurs
         </CardTitle>
         <CardDescription>
-          Attribuez la classe, l'option et les responsabilités. Seuls les
-          administrateurs globaux nomment les responsables de classe.
+          Attribuez la classe, les options et les responsabilités. Cocher
+          « Responsable de classe » demande la classe concernée. La suppression
+          retire définitivement le compte et ses données.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -490,13 +531,37 @@ function UserRow({
     patch: {
       isAdmin?: boolean;
       isClassAdmin?: boolean;
+      adminOfClassId?: Id<"classes"> | null;
       classId?: Id<"classes"> | null;
-      option?: (typeof OPTIONS)[number] | null;
+      options?: (typeof OPTIONS)[number][];
     },
   ) => void;
 }) {
   const classes = useQuery(api.app.listClasses) ?? [];
+  const remove = useMutation(api.app.deleteUser);
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const toggleOption = (opt: (typeof OPTIONS)[number]) => {
+    const next = u.options.includes(opt)
+      ? u.options.filter((o) => o !== opt)
+      : [...u.options, opt];
+    onUpdate(u._id, { options: next });
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await remove({ userId: u._id });
+      toast.success(`Compte de ${u.name || u.email || "l'utilisateur"} supprimé définitivement.`);
+    } catch {
+      toast.error("Suppression impossible.");
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border/70 bg-secondary/40 p-3">
@@ -506,30 +571,41 @@ function UserRow({
             <p className="text-sm font-medium">{u.name || u.email || "Utilisateur"}</p>
             {u.isAdmin && (
               <Badge variant="secondary" className="gap-1 text-[10px]">
-                <Shield className="size-3 text-primary" /> admin global
+                <Shield className="size-3 text-primary" /> administrateur
               </Badge>
             )}
             {u.isClassAdmin && !u.isAdmin && (
               <Badge variant="outline" className="text-[10px]">
-                responsable de classe
+                responsable{u.adminOfClassName ? ` — ${u.adminOfClassName}` : ""}
               </Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-2 text-xs flex-wrap">
           {u.className && <Badge variant="outline">{u.className}</Badge>}
-          {u.option && <Badge variant="outline">{u.option}</Badge>}
-          <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)}>
+          {u.options.map((o) => (
+            <Badge key={o} variant="outline">{o}</Badge>
+          ))}
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => setEditing((v) => !v)} title="Modifier">
             {editing ? <X className="size-4" /> : <Pencil className="size-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => setConfirmDelete(true)}
+            title="Supprimer définitivement"
+          >
+            <Trash2 className="size-4 text-destructive" />
           </Button>
         </div>
       </div>
 
       {editing && (
-        <div className="mt-3 pt-3 border-t border-border/60 grid gap-2 sm:grid-cols-2">
+        <div className="mt-3 pt-3 border-t border-border/60 grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Classe</Label>
+            <Label>Classe de l'élève</Label>
             <select
               value={u.classId ?? ""}
               onChange={(e) =>
@@ -546,40 +622,100 @@ function UserRow({
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Option</Label>
-            <select
-              value={u.option ?? ""}
-              onChange={(e) =>
-                onUpdate(u._id, {
-                  option: (e.target.value || null) as (typeof OPTIONS)[number] | null,
-                })
-              }
-              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
-            >
-              <option value="">— Aucune —</option>
+            <Label>Options suivies (plusieurs possibles)</Label>
+            <div className="flex flex-wrap gap-1.5">
               {OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => toggleOption(o)}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer",
+                    u.options.includes(o)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-secondary/50 hover:border-primary/50",
+                  )}
+                >
+                  {o}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={u.isAdmin}
-              onChange={(e) => onUpdate(u._id, { isAdmin: e.target.checked })}
-            />
-            <Shield className="size-4 text-primary" /> Admin global
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={u.isClassAdmin}
-              onChange={(e) => onUpdate(u._id, { isClassAdmin: e.target.checked })}
-            />
-            <UserCog className="size-4 text-primary" /> Responsable de classe
-          </label>
+          <div className="space-y-1.5 sm:col-span-2">
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={u.isAdmin}
+                  onChange={(e) => onUpdate(u._id, { isAdmin: e.target.checked })}
+                />
+                <Shield className="size-4 text-primary" /> Administrateur global
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={u.isClassAdmin}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      // À la promotion, demander la classe gérée : elle s'affiche ci-dessous
+                      onUpdate(u._id, {
+                        isClassAdmin: true,
+                        adminOfClassId: u.adminOfClassId ?? u.classId ?? null,
+                      });
+                    } else {
+                      onUpdate(u._id, {
+                        isClassAdmin: false,
+                        adminOfClassId: null,
+                      });
+                    }
+                  }}
+                />
+                <UserCog className="size-4 text-primary" /> Responsable de classe
+              </label>
+            </div>
+            {u.isClassAdmin && (
+              <div className="space-y-1.5">
+                <Label>Classe dont il/elle est responsable</Label>
+                <select
+                  value={u.adminOfClassId ?? ""}
+                  onChange={(e) =>
+                    onUpdate(u._id, {
+                      adminOfClassId: (e.target.value || null) as Id<"classes"> | null,
+                    })
+                  }
+                  className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+                >
+                  <option value="">— Choisir la classe —</option>
+                  {classes.map((c) => (
+                    <option key={c._id} value={c._id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="panel border-border/80 max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Supprimer ce compte ?</DialogTitle>
+            <DialogDescription>
+              {u.name || u.email} sera définitivement retiré : profil, sessions,
+              identifiants et historique de connexion. Cette action est
+              irréversible.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Button variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Suppression…" : "Supprimer définitivement"}
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Annuler
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

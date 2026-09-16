@@ -50,6 +50,7 @@ type Slot = {
   subject: string;
   teacher?: string;
   room?: string;
+  weekType: "A" | "B" | "AB";
   cancelled?: boolean;
   cancellationReason?: string;
 };
@@ -59,7 +60,9 @@ export default function Timetable() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedSlotId = searchParams.get("slot");
 
-  const slots = useQuery(api.app.listMySlots) ?? [];
+  const [week, setWeek] = useState<"A" | "B" | "AB">("AB");
+
+  const slots = useQuery(api.app.listMySlots, week === "AB" ? {} : { week }) ?? [];
   const [selected, setSelected] = useState<Slot | null>(null);
 
   useEffect(() => {
@@ -87,8 +90,8 @@ export default function Timetable() {
           <CardHeader>
             <CardTitle>Emploi du temps</CardTitle>
             <CardDescription>
-              Complète d'abord le questionnaire sur la page d'accueil pour choisir ta
-              classe.
+              Complétez d'abord le questionnaire sur la page d'accueil pour choisir
+              votre classe.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -99,6 +102,8 @@ export default function Timetable() {
           isClassAdmin={user.isClassAdmin}
           isAdmin={user.isAdmin}
           classId={user.classId}
+          week={week}
+          setWeek={setWeek}
         />
       )}
 
@@ -117,12 +122,16 @@ function TimetableGrid({
   isClassAdmin,
   isAdmin,
   classId,
+  week,
+  setWeek,
 }: {
   slots: Slot[];
   onOpen: (slot: Slot) => void;
   isClassAdmin: boolean;
   isAdmin: boolean;
   classId: Id<"classes">;
+  week: "A" | "B" | "AB";
+  setWeek: (w: "A" | "B" | "AB") => void;
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
@@ -130,12 +139,26 @@ function TimetableGrid({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
-            <p className="text-sm text-muted-foreground">
-              Sélectionnez un cours pour consulter ses documents.
-            </p>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
+          <p className="text-sm text-muted-foreground">
+            Sélectionnez un cours pour consulter ses documents.
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {(["A", "B", "AB"] as const).map((w) => (
+            <Button
+              key={w}
+              variant={week === w ? "default" : "ghost"}
+              size="sm"
+              className="rounded-none font-mono"
+              onClick={() => setWeek(w)}
+            >
+              {w === "AB" ? "A + B" : `Semaine ${w}`}
+            </Button>
+          ))}
+        </div>
         {canEdit && (
           <Button className="gap-1.5" onClick={() => setShowAdd(true)}>
             <Plus className="size-4" /> Ajouter un cours
@@ -177,8 +200,7 @@ function TimetableGrid({
                       const endH = eh + em / 60;
                       const top = (startH - 8) * 56;
                       const height = Math.max((endH - startH) * 56 - 4, 28);
-                      return (
-                        <button
+                      return (                        <button
                           key={slot._id}
                           onClick={() => onOpen(slot)}
                           style={{ top: top + 2, height }}
@@ -186,7 +208,7 @@ function TimetableGrid({
                             "absolute left-1 right-1 rounded-lg border px-2 py-1 text-left overflow-hidden transition-all cursor-pointer hover:z-10 hover:scale-[1.02]",
                             slot.cancelled
                               ? "border-destructive/50 bg-destructive/10 line-through decoration-destructive/60"
-                            : "border-primary/40 bg-primary/10 hover:bg-primary/15 glow-ring-soft",
+                              : "border-primary/40 bg-primary/10 hover:bg-primary/15 glow-ring-soft",
                             dayIdx >= 5 && "opacity-80",
                           )}
                         >
@@ -284,6 +306,7 @@ function SlotDialog({
               </DialogTitle>
               <DialogDescription>
                 {slot.day} · {slot.start}–{slot.end}
+                {slot.weekType !== "AB" ? ` · semaine ${slot.weekType}` : " · toutes les semaines"}
                 {slot.teacher ? ` · ${slot.teacher}` : ""}
                 {slot.room ? ` · salle ${slot.room}` : ""}
               </DialogDescription>
@@ -594,6 +617,7 @@ function AddSlotDialog({
   const [subject, setSubject] = useState("");
   const [teacher, setTeacher] = useState("");
   const [room, setRoom] = useState("");
+  const [weekType, setWeekType] = useState<"A" | "B" | "AB">("AB");
   const [saving, setSaving] = useState(false);
 
   if (!canEdit) return null;
@@ -610,6 +634,7 @@ function AddSlotDialog({
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
+        weekType,
       });
       toast.success("Cours ajouté à l'emploi du temps.");
       onOpenChange(false);
@@ -661,6 +686,19 @@ function AddSlotDialog({
           <div className="space-y-1.5">
             <Label htmlFor="sl-subject">Matière</Label>
             <Input id="sl-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Mathématiques" required />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sl-week">Semaine</Label>
+            <select
+              id="sl-week"
+              value={weekType}
+              onChange={(e) => setWeekType(e.target.value as "A" | "B" | "AB")}
+              className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+            >
+              <option value="AB">Toutes les semaines (A et B)</option>
+              <option value="A">Semaine A uniquement</option>
+              <option value="B">Semaine B uniquement</option>
+            </select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="sl-teacher">Professeur</Label>

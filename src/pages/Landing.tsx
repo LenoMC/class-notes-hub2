@@ -60,8 +60,8 @@ export default function Landing() {
 
       {/* Header */}
       <header className="relative z-10 mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
-        <img src={logo} alt="Class Notes" className="size-9 rounded-lg" />
-        <span className="text-lg font-semibold tracking-tight">Class Notes</span>
+        <img src={logo} alt="CoursFlow" className="size-9 rounded-lg" />
+        <span className="text-lg font-semibold tracking-tight">CoursFlow</span>
         <span className="hidden sm:inline text-xs font-mono text-muted-foreground border border-border/70 rounded px-1.5 py-0.5">
           v1
         </span>
@@ -92,9 +92,10 @@ export default function Landing() {
           <span className="text-gradient-bolt">au même endroit</span>
         </h1>
         <p className="mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-          Class Notes rassemble l'emploi du temps, les fiches de cours et les devoirs
-          de votre classe dans une interface sobre et fiable. Créez votre compte,
-          sélectionnez votre classe, et retrouvez chaque ressource à sa place.
+          CoursFlow rassemble l'emploi du temps, les fiches de cours et les devoirs
+          de votre classe dans une interface sobre et fiable — semaines A et B
+          comprises. Créez votre compte, sélectionnez votre classe, et retrouvez
+          chaque ressource à sa place.
         </p>
         <div className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <Button size="lg" className="glow-ring" onClick={goToSignUp}>
@@ -173,7 +174,7 @@ export default function Landing() {
                 <span className="text-foreground">DM n°3 — chapitre 4</span>
               </p>
               <p className="text-muted-foreground">statut: publié · 1 fichier · pdf</p>
-              <p className="mt-2 text-muted-foreground">$ class-notes open "DM n°3"</p>
+              <p className="mt-2 text-muted-foreground">$ coursflow open "DM n°3"</p>
               <p className="text-foreground">→ téléchargement prêt</p>
             </div>
           </div>
@@ -196,7 +197,7 @@ export default function Landing() {
       </section>
 
       <footer className="relative z-10 border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-        Class Notes — gestion de cours et de devoirs pour les classes
+        CoursFlow — gestion de cours et de devoirs pour les classes
       </footer>
     </motion.div>
   );

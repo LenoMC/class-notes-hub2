@@ -146,13 +146,36 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         code,
       });
       if (result?.signingIn) {
-        toast.success("Email vérifié. Bienvenue sur Class Notes.");
+        toast.success("Email vérifié. Bienvenue sur CoursFlow.");
         navigate(redirect, { replace: true });
       } else {
-        setError("Code incorrect ou expiré.");
+        setError(
+          "Code invalide : il a peut-être déjà été utilisé ou une nouvelle demande a annulé celui-ci. Cliquez sur « Renvoyer un code » pour en recevoir un nouveau.",
+        );
       }
     } catch {
-      setError("Code incorrect ou expiré.");
+      setError(
+        "Code invalide : il a peut-être déjà été utilisé ou a expiré. Cliquez sur « Renvoyer un code » pour en recevoir un nouveau.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ---- Renvoyer un nouveau code ----
+  const handleResend = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // flow "reset" : génère et envoie un nouveau code sans toucher au mot de
+      // passe (et sans l'étape de connexion qui suivrait un "signUp" réussi).
+      await signIn("password", { flow: "reset", email: pendingEmail });
+      setOtp("");
+      toast.success(
+        "Un nouveau code a été envoyé. Saisissez uniquement le plus récent.",
+      );
+    } catch {
+      toast.error("Impossible de renvoyer le code. Réessayez dans un instant.");
     } finally {
       setIsLoading(false);
     }
@@ -224,7 +247,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <button onClick={goHome} className="flex justify-center cursor-pointer" aria-label="Accueil">
-                  <img src={logo} alt="Class Notes" width={64} height={64} className="rounded-xl mb-3 mt-2" />
+                  <img src={logo} alt="CoursFlow" width={64} height={64} className="rounded-xl mb-3 mt-2" />
                 </button>
                 <CardTitle className="text-xl">Connexion</CardTitle>
                 <CardDescription>Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
@@ -327,7 +350,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </div>
                 <CardTitle>Vérifiez votre boîte mail</CardTitle>
                 <CardDescription>
-                  Un code à 6 chiffres a été envoyé à {pendingEmail}
+                  Un code à 6 chiffres a été envoyé à {pendingEmail}. Saisissez le
+                  code le plus récent reçu.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={(e) => { e.preventDefault(); handleVerify(otp); }}>
@@ -347,8 +371,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <Button type="submit" className="w-full" disabled={isLoading || otp.length !== 6}>
                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Vérification…</> : <>Vérifier <ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
+                  <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={handleResend}>
+                    Vous n'avez rien reçu ? Renvoyer un code
+                  </Button>
                   <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />Retour
+                    <ArrowLeft className="mr-2 h-4 w-4" />Retour à la connexion
                   </Button>
                 </CardFooter>
               </form>
@@ -424,7 +451,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground border-t border-border/60">
             <Link to="/" className="hover:text-primary transition-colors">
-              Class Notes — cours, devoirs et emploi du temps
+              CoursFlow — cours, devoirs et emploi du temps
             </Link>
           </div>
         </Card>

@@ -4,7 +4,7 @@ import { Infer, v } from "convex/values";
 
 // default user roles. can add / remove based on the project as needed
 export const ROLES = {
-  ADMIN: "admin", // admin global du site
+  ADMIN: "admin", // administrateur global du site
   USER: "user",
   MEMBER: "member",
 } as const;
@@ -34,10 +34,16 @@ export const DAYS = [
   "Samedi",
   "Dimanche",
 ] as const;
-export const dayValidator = v.union(
-  ...DAYS.map((d) => v.literal(d)),
-);
+export const dayValidator = v.union(...DAYS.map((d) => v.literal(d)));
 export type Day = (typeof DAYS)[number];
+
+export const WEEK_TYPES = ["A", "B"] as const;
+export const weekTypeValidator = v.union(
+  v.literal("A"),
+  v.literal("B"),
+  v.literal("AB"), // les deux semaines (r c : cours toute les semaines)
+);
+export type WeekType = (typeof WEEK_TYPES)[number] | "AB";
 
 const schema = defineSchema(
   {
@@ -54,15 +60,18 @@ const schema = defineSchema(
 
       role: v.optional(roleValidator), // role of the user. do not remove
 
-      // Champs applicatif Class Notes
-      isAdmin: v.optional(v.boolean()), // admin global du site
-      isClassAdmin: v.optional(v.boolean()), // admin de sa classe
+      // Champs applicatif CoursFlow
+      isAdmin: v.optional(v.boolean()), // administrateur global du site
+      isClassAdmin: v.optional(v.boolean()), // responsable (admin) de sa classe
       classId: v.optional(v.id("classes")),
-      option: v.optional(optionValidator),
+      adminOfClassId: v.optional(v.id("classes")), // classe dont il est responsable
+      options: v.optional(v.array(optionValidator)), // options choisies (0 à plusieurs)
       questionnaireDone: v.optional(v.boolean()),
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+    })
+      .index("email", ["email"]) // index for the email. do not remove or modify
+      .index("by_class", ["classId"]),
 
-    // Classes prédéfinies par les admins globaux
+    // Classes prédéfinies par les administrateurs globaux
     classes: defineTable({
       name: v.string(), // ex: "3ème A"
       createdAt: v.number(),
@@ -77,6 +86,7 @@ const schema = defineSchema(
       subject: v.string(),
       teacher: v.optional(v.string()),
       room: v.optional(v.string()),
+      weekType: v.optional(weekTypeValidator), // A, B ou AB (défaut : AB)
       cancelled: v.optional(v.boolean()), // cours annulé par un admin
       cancellationReason: v.optional(v.string()),
       createdAt: v.number(),

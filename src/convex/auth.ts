@@ -21,11 +21,11 @@ function randomCode(): string {
 async function sendCodeEmail(email: string, token: string, kind: "verify" | "reset") {
   const subject =
     kind === "verify"
-      ? "Votre code de vérification Class Notes"
-      : "Votre code de réinitialisation Class Notes";
+      ? "Votre code de vérification CoursFlow"
+      : "Votre code de réinitialisation CoursFlow";
   const body =
     kind === "verify"
-      ? `Bienvenue sur Class Notes. Votre code de vérification : ${token}. Il expire dans 15 minutes.`
+      ? `Bienvenue sur CoursFlow. Votre code de vérification : ${token}. Il expire dans 15 minutes.`
       : `Votre code de réinitialisation de mot de passe : ${token}. Il expire dans 15 minutes.`;
 
   try {

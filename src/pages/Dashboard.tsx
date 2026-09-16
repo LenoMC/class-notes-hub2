@@ -7,8 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/components/AppShell";
 import { api } from "@/convex/_generated/api";
@@ -44,18 +42,19 @@ export default function Dashboard() {
   const classFiles = useQuery(api.app.listClassFiles, user?.classId ? {} : "skip");
   const claimAdmin = useMutation(api.app.claimAdminIfFirst);
   const todayName = DAYS_FR[new Date().getDay()];
+  const isWeekend = todayName === "Samedi" || todayName === "Dimanche";
+  const [week, setWeek] = useState<"A" | "B">("A");
 
-  // Bootstrap : le tout premier utilisateur inscrit devient admin global.
+  // Bootstrap : le tout premier utilisateur inscrit devient administrateur global.
   useEffect(() => {
-    if (authLoading || !user) return;
-    if (user.isAdmin || user.questionnaireDone) return;
+    if (authLoading || !user || user.isAdmin || user.questionnaireDone) return;
     claimAdmin().catch(() => {});
   }, [authLoading, user, claimAdmin]);
 
   if (authLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
-        <img src="/logo.svg" alt="Class Notes" className="size-10 animate-pulse rounded-lg" />
+        <img src="/logo.svg" alt="CoursFlow" className="size-10 animate-pulse rounded-lg" />
       </main>
     );
   }
@@ -67,27 +66,34 @@ export default function Dashboard() {
       ) : (
         user && (
           <>
-            <HomeHeader user={user} todayName={todayName} />
-            <TodaySchedule user={user} todayName={todayName} />
-            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <HomeHeader user={user} todayName={todayName} week={week} setWeek={setWeek} />
+            <TodaySchedule user={user} todayName={todayName} week={week} />
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <RecentFiles files={classFiles} />
               <AdminsCard admins={admins} />
             </div>
           </>
         )
       )}
+      {isWeekend ? null : null}
     </AppShell>
   );
 }
 
-// ---------- Questionnaire (première connexion) ----------
+// ---------- Questionnaire (première connexion uniquement) ----------
 
 function Questionnaire({ user }: { user: Me }) {
   const classes = useQuery(api.app.listClasses) ?? [];
   const submit = useMutation(api.app.submitQuestionnaire);
   const [classId, setClassId] = useState<Id<"classes"> | null>(null);
-  const [option, setOption] = useState<string | null>(null);
+  const [options, setOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  const toggleOption = (opt: string) => {
+    setOptions((prev) =>
+      prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt],
+    );
+  };
 
   const handleSubmit = async () => {
     if (!classId) return;
@@ -95,11 +101,11 @@ function Questionnaire({ user }: { user: Me }) {
     try {
       await submit({
         classId,
-        option: (option as (typeof OPTIONS)[number] | null) ?? null,
+        options: options as (typeof OPTIONS)[number][],
       });
       toast.success("Préférences enregistrées. Bienvenue dans votre espace.");
     } catch {
-      toast.error("Impossible d'enregistrer. Réessaie.");
+      toast.error("Impossible d'enregistrer. Réessayez.");
     } finally {
       setSaving(false);
     }
@@ -115,15 +121,15 @@ function Questionnaire({ user }: { user: Me }) {
           Bienvenue{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </CardTitle>
         <CardDescription>
-          Avant de continuer, indiquez votre classe et votre option. Ces informations
-          déterminent votre emploi du temps et les ressources auxquelles vous aurez
-          accès.
+          Avant de continuer, indiquez votre classe et, si vous en suivez, vos
+          options. Ces informations déterminent votre emploi du temps et les
+          ressources auxquelles vous aurez accès.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
           <p className="mb-3 flex items-center gap-2 font-medium">
-            <GraduationCap className="size-4 text-primary" /> Ta classe
+            <GraduationCap className="size-4 text-primary" /> Votre classe
           </p>
           {classes.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -152,39 +158,33 @@ function Questionnaire({ user }: { user: Me }) {
         </div>
 
         <div>
-          <p className="mb-3 flex items-center gap-2 font-medium">
-            <BookOpen className="size-4 text-primary" /> Ton option
-            <span className="text-xs font-normal text-muted-foreground">(facultatif)</span>
+          <p className="mb-1 flex items-center gap-2 font-medium">
+            <BookOpen className="size-4 text-primary" /> Vos options
+            <span className="text-xs font-normal text-muted-foreground">
+              facultatif — plusieurs choix possibles
+            </span>
           </p>
-          <RadioGroup
-            value={option ?? ""}
-            onValueChange={setOption}
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2"
-          >
+          <p className="mb-3 text-xs text-muted-foreground">
+            Sélectionnez toutes les options que vous suivez, ou aucune.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {OPTIONS.map((opt) => (
-              <Label
+              <button
                 key={opt}
-                htmlFor={`opt-${opt}`}
+                type="button"
+                onClick={() => toggleOption(opt)}
                 className={cn(
-                  "flex cursor-pointer items-center justify-center rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm font-medium transition-all hover:border-primary/50",
-                  option === opt &&
-                    "border-primary bg-primary/10 text-primary glow-ring-soft",
+                  "flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all",
+                  options.includes(opt)
+                    ? "border-primary bg-primary/10 text-primary glow-ring-soft"
+                    : "border-border bg-secondary/40 hover:border-primary/50",
                 )}
               >
-                <RadioGroupItem value={opt} id={`opt-${opt}`} className="sr-only" />
+                {options.includes(opt) && <CheckCircle2 className="size-3.5" />}
                 {opt}
-              </Label>
+              </button>
             ))}
-          </RadioGroup>
-          {option && (
-            <button
-              type="button"
-              onClick={() => setOption(null)}
-              className="mt-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              Je n'ai pas d'option
-            </button>
-          )}
+          </div>
         </div>
 
         <Button
@@ -202,28 +202,58 @@ function Questionnaire({ user }: { user: Me }) {
 
 // ---------- En-tête accueil ----------
 
-function HomeHeader({ user, todayName }: { user: Me; todayName: string }) {
+function HomeHeader({
+  user,
+  todayName,
+  week,
+  setWeek,
+}: {
+  user: Me;
+  todayName: string;
+  week: "A" | "B";
+  setWeek: (w: "A" | "B") => void;
+}) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">        <div>
-          <p className="text-sm text-muted-foreground">
-            {todayName} · {user.className ?? "Classe non définie"}
-            {user.option ? ` · Option ${user.option}` : ""}
-          </p>
+    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+      <div>
+        <p className="text-sm text-muted-foreground">
+          {todayName} · {user.className ?? "Classe non définie"}
+          {user.options.length > 0 ? ` · ${user.options.join(", ")}` : ""}
+        </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Bonjour{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </h1>
       </div>
-      <div className="flex gap-2 items-center">
+      <div className="flex flex-wrap gap-2 items-center">
         {user.isClassAdmin && (
           <Badge variant="secondary" className="gap-1.5">
-            <UserCog className="size-3.5 text-primary" /> Responsable de classe
+            <UserCog className="size-3.5 text-primary" />
+            Responsable{user.adminOfClassName ? ` — ${user.adminOfClassName}` : " de classe"}
           </Badge>
         )}
         {user.isAdmin && (
           <Badge variant="secondary" className="gap-1.5">
-            <Shield className="size-3.5 text-primary" /> Administrateur global
+            <Shield className="size-3.5 text-primary" /> Administrateur
           </Badge>
         )}
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          <Button
+            variant={week === "A" ? "default" : "ghost"}
+            size="sm"
+            className="rounded-none"
+            onClick={() => setWeek("A")}
+          >
+            Semaine A
+          </Button>
+          <Button
+            variant={week === "B" ? "default" : "ghost"}
+            size="sm"
+            className="rounded-none"
+            onClick={() => setWeek("B")}
+          >
+            Semaine B
+          </Button>
+        </div>
         <Button asChild variant="outline">
           <Link to="/edt">
             <CalendarDays className="size-4 mr-1.5" /> EDT complet
@@ -236,8 +266,8 @@ function HomeHeader({ user, todayName }: { user: Me; todayName: string }) {
 
 // ---------- EDT du jour ----------
 
-function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
-  const slots = useQuery(api.app.listMySlots) ?? [];
+function TodaySchedule({ user, todayName, week }: { user: Me; todayName: string; week: "A" | "B" }) {
+  const slots = useQuery(api.app.listMySlots, { week }) ?? [];
   const todaySlots = useMemo(
     () => slots.filter((s) => s.day === todayName),
     [slots, todayName],
@@ -249,6 +279,9 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <CalendarDays className="size-5 text-primary" /> Emploi du temps du jour
+          <Badge variant="outline" className="text-[10px] font-mono">
+            semaine {week}
+          </Badge>
         </CardTitle>
         <CardDescription>
           Sélectionnez un cours pour retrouver ses fichiers dans l'onglet EDT.
@@ -262,7 +295,7 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
               <p className="text-sm text-muted-foreground">
                 {isWeekend
                   ? "C'est le week-end. Aucun cours programmé."
-                  : "Aucun cours programmé aujourd'hui."}
+                  : `Aucun cours programmé aujourd'hui pour la semaine ${week}.`}
               </p>
             </div>
           ) : (
@@ -271,13 +304,26 @@ function TodaySchedule({ user, todayName }: { user: Me; todayName: string }) {
                 <Link
                   key={slot._id}
                   to={`/edt?slot=${slot._id}`}
-                  className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-4 py-3 transition-colors hover:border-primary/50 cursor-pointer"
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-4 py-3 transition-colors hover:border-primary/50 cursor-pointer",
+                    slot.cancelled && "opacity-70",
+                  )}
                 >
                   <span className="font-mono text-xs text-primary w-12">
                     {slot.start}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{slot.subject}</p>
+                    <p className="truncate text-sm font-medium">
+                      {slot.subject}
+                      {slot.cancelled && (
+                        <span className="ml-2 text-xs text-destructive">(annulé)</span>
+                      )}
+                      {slot.weekType !== "AB" && (
+                        <Badge variant="outline" className="ml-2 text-[10px] font-mono">
+                          {slot.weekType}
+                        </Badge>
+                      )}
+                    </p>
                     {slot.teacher && (
                       <p className="truncate text-xs text-muted-foreground">
                         {slot.teacher}
@@ -398,7 +444,7 @@ function AdminsCard({ admins }: { admins: Admins | undefined }) {
               {admins.globals.map((a) => (
                 <li key={a._id} className="flex items-center gap-2 text-sm">
                   <CheckCircle2 className="size-4 text-primary" />
-                  {a.name || a.email || "Admin"}
+                  {a.name || a.email || "Administrateur"}
                 </li>
               ))}
             </ul>
