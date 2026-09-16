@@ -4,7 +4,7 @@ import { Infer, v } from "convex/values";
 
 // default user roles. can add / remove based on the project as needed
 export const ROLES = {
-  ADMIN: "admin",
+  ADMIN: "admin", // admin global du site
   USER: "user",
   MEMBER: "member",
 } as const;
@@ -15,6 +15,29 @@ export const roleValidator = v.union(
   v.literal(ROLES.MEMBER),
 );
 export type Role = Infer<typeof roleValidator>;
+
+export const OPTION_VALUES = ["LCE", "Latin", "Allemand", "Espagnol"] as const;
+export const optionValidator = v.union(
+  v.literal("LCE"),
+  v.literal("Latin"),
+  v.literal("Allemand"),
+  v.literal("Espagnol"),
+);
+export type OptionValue = (typeof OPTION_VALUES)[number];
+
+export const DAYS = [
+  "Lundi",
+  "Mardi",
+  "Mercredi",
+  "Jeudi",
+  "Vendredi",
+  "Samedi",
+  "Dimanche",
+] as const;
+export const dayValidator = v.union(
+  ...DAYS.map((d) => v.literal(d)),
+);
+export type Day = (typeof DAYS)[number];
 
 const schema = defineSchema(
   {
@@ -30,14 +53,46 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
+
+      // Champs applicatif Foudre
+      isAdmin: v.optional(v.boolean()), // admin global du site
+      isClassAdmin: v.optional(v.boolean()), // admin de sa classe
+      classId: v.optional(v.id("classes")),
+      option: v.optional(optionValidator),
+      questionnaireDone: v.optional(v.boolean()),
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // add other tables here
+    // Classes prédéfinies par les admins globaux
+    classes: defineTable({
+      name: v.string(), // ex: "3ème A"
+      createdAt: v.number(),
+    }).index("by_name", ["name"]),
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    // Emploi du temps par classe
+    timetableSlots: defineTable({
+      classId: v.id("classes"),
+      day: dayValidator,
+      start: v.string(), // "HH:MM"
+      end: v.string(), // "HH:MM"
+      subject: v.string(),
+      teacher: v.optional(v.string()),
+      room: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_class", ["classId"]),
+
+    // Fichiers de cours / devoirs rattachés à un créneau
+    courseFiles: defineTable({
+      slotId: v.id("timetableSlots"),
+      title: v.string(),
+      kind: v.union(v.literal("cours"), v.literal("devoir")),
+      description: v.optional(v.string()),
+      fileName: v.string(),
+      fileType: v.string(),
+      bytes: v.optional(v.number()),
+      storageId: v.optional(v.id("_storage")),
+      externalUrl: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_slot", ["slotId"]),
   },
   {
     schemaValidation: false,
