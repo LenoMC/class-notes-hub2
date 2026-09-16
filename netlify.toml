@@ -4,7 +4,7 @@
 # Netlify's "Site configuration → Environment variables".
 
 [build]
-  command = "npx convex deploy && npm run build"
+  command = "npx convex deploy --cmd 'npm run build'"
   publish = "dist"
 
 [build.environment]
