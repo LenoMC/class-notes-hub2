@@ -20,6 +20,8 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Loader2,
   Lock,
   Mail,
@@ -281,7 +283,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="password" name="password" type="password" placeholder="••••••••" className="pl-9" disabled={isLoading} required />
+                      <PasswordInput id="password" name="password" placeholder="••••••••" disabled={isLoading} autoComplete="current-password" />
                     </div>
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
@@ -340,14 +342,14 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     <Label htmlFor="su-password">Mot de passe</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="su-password" name="password" type="password" placeholder="8 caractères minimum" className="pl-9" disabled={isLoading} required minLength={8} />
+                      <PasswordInput id="su-password" name="password" placeholder="8 caractères minimum" disabled={isLoading} required minLength={8} autoComplete="new-password" />
                     </div>
                   </div>
                   <div className="space-y-2 pt-1">
                     <Label htmlFor="su-confirm">Confirmer le mot de passe</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="su-confirm" name="confirm" type="password" placeholder="••••••••" className="pl-9" disabled={isLoading} required />
+                      <PasswordInput id="su-confirm" name="confirm" placeholder="••••••••" disabled={isLoading} required autoComplete="new-password" />
                     </div>
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
@@ -454,12 +456,12 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     <Label htmlFor="rs-password">Nouveau mot de passe</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="rs-password" name="newPassword" type="password" placeholder="8 caractères minimum" className="pl-9" disabled={isLoading} required minLength={8} />
+                      <PasswordInput id="rs-password" name="newPassword" placeholder="8 caractères minimum" disabled={isLoading} required minLength={8} autoComplete="new-password" />
                     </div>
                   </div>
                   <div className="space-y-2 pt-1">
                     <Label htmlFor="rs-confirm">Confirmer</Label>
-                    <Input id="rs-confirm" name="confirm" type="password" placeholder="••••••••" disabled={isLoading} required />
+                    <PasswordInput id="rs-confirm" name="confirm" placeholder="••••••••" disabled={isLoading} required autoComplete="new-password" />
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
@@ -491,5 +493,32 @@ export default function AuthPage(props: AuthProps) {
     <Suspense>
       <Auth {...props} />
     </Suspense>
+  );
+}
+
+/** Champ mot de passe avec œil blanc pour afficher / masquer la saisie. */
+function PasswordInput(
+  props: React.ComponentProps<typeof Input> & { type?: never },
+) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+      <Input
+        {...props}
+        type={visible ? "text" : "password"}
+        className="pl-9 pr-10"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+        title={visible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-md text-white transition-colors hover:bg-white/10 cursor-pointer"
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
   );
 }

@@ -433,13 +433,19 @@ function TimetableGrid({
                 )}
 
                 {/* Étiquettes horaires sur l'axe de GAUCHE : chaque heure une
-                    seule fois, centrée sur le trait qui sépare les créneaux. */}
+                    seule fois, centrée sur le trait qui sépare les créneaux.
+                    Alternance de teinte pour faciliter la lecture : créneaux
+                    pairs en blanc, impairs en gris. */}
                 {PERIODS.map((p, i) => {
                   const pauseAfter = PAUSES.find((pa) => pa.after === p.id);
+                  const even = i % 2 === 0;
                   return (
                     <div key={p.id}>
                       <span
-                        className="absolute font-mono text-[10px] font-bold leading-none text-foreground/90"
+                        className={cn(
+                          "absolute font-mono text-[10px] font-bold leading-none",
+                          even ? "text-white" : "text-muted-foreground",
+                        )}
                         style={{
                           top: ROW_TOPS[i],
                           left: 0,
@@ -452,7 +458,10 @@ function TimetableGrid({
                       </span>
                       {(pauseAfter || i === PERIODS.length - 1) && (
                         <span
-                          className="absolute font-mono text-[10px] leading-none text-muted-foreground"
+                          className={cn(
+                            "absolute font-mono text-[10px] leading-none",
+                            even ? "text-muted-foreground" : "text-white",
+                          )}
                           style={{
                             top: ROW_TOPS[i] + ROW_H,
                             left: 0,
