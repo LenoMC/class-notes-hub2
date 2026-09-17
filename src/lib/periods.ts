@@ -22,13 +22,17 @@ export const PERIODS: Period[] = [
 
 /** Pauses de la journée : aucune matière possible pendant ces plages.
     `h` = hauteur de la bande affichée dans l'EDT (px) :
-    - Récréation : un espace un peu plus grand qu'une simple gouttière,
-      mais bien moins qu'un créneau de cours.
+    - Récréation : bande fine, juste de quoi souffler entre deux cours.
     - Déjeuner : exactement la hauteur d'un créneau de cours (84 px). */
-export const PAUSES: Array<{ after: string; label: string; h: number }> = [
-  { after: "P2", label: "Récréation", h: 28 },
-  { after: "P4", label: "Déjeuner", h: 84 },
-  { after: "P6", label: "Récréation", h: 28 },
+export const PAUSES: Array<{
+  after: string;
+  label: string;
+  h: number;
+  kind: "recre" | "lunch";
+}> = [
+  { after: "P2", label: "Récréation", h: 24, kind: "recre" },
+  { after: "P4", label: "Déjeuner", h: 84, kind: "lunch" },
+  { after: "P6", label: "Récréation", h: 24, kind: "recre" },
 ];
 
 /** Créneaux disponibles pour un jour donné (tous identiques désormais). */

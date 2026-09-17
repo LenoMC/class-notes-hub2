@@ -114,10 +114,47 @@ const ROW_TOPS: number[] = (() => {
 /** Hauteur totale du corps de grille (créneaux + bandes de pause). */
 const BODY_H = ROW_TOPS[ROW_TOPS.length - 1] + ROW_H;
 
-/** Calculs de position d'une colonne jour (en absolu dans le corps). */
+/** Calculs de position d'une colonne jour (en absolu dans le corps).
+    Géométrie : axe 64px + 4 gouttières de 8px + marge droite de 8px. */
+const AXIS_W = 64;
 const colLeft = (di: number) =>
-  `calc(64px + ${di} * ((100% - 96px) / 5 + 8px))`;
-const COL_WIDTH = "calc((100% - 96px) / 5)";
+  `calc(${AXIS_W}px + ${di} * ((100% - ${AXIS_W + 40}px) / 5 + 8px))`;
+const COL_WIDTH = `calc((100% - ${AXIS_W + 40}px) / 5)`;
+const GRID_COLS = `${AXIS_W}px repeat(5, calc((100% - ${AXIS_W + 40}px) / 5))`;
+
+/** Convertit "HH:MM" en minutes depuis minuit. */
+const toMin = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+/** Position Y (px) correspondant à une minute de la journée, sur l'axe.
+    Renvoie null si l'heure est hors de la grille (avant 8:15, après 16:45). */
+function yForMinute(min: number): number | null {
+  const first = PERIODS[0];
+  const last = PERIODS[PERIODS.length - 1];
+  if (min < toMin(first.start) || min > toMin(last.end)) return null;
+  for (let i = 0; i < PERIODS.length; i++) {
+    const p = PERIODS[i];
+    const sMin = toMin(p.start);
+    const eMin = toMin(p.end);
+    if (min <= eMin) {
+      // Dans le créneau i (ou exactement à son début)
+      const frac = Math.max(0, Math.min(1, (min - sMin) / (eMin - sMin)));
+      return ROW_TOPS[i] + frac * ROW_H;
+    }
+    // Dans la pause qui suit ce créneau ?
+    const pause = PAUSES.find((pa) => pa.after === p.id);
+    const next = PERIODS[i + 1];
+    if (pause && next && min < toMin(next.start)) {
+      const gapTop = ROW_TOPS[i] + ROW_H + ROW_GAP;
+      const pauseTop = gapTop + ROW_GAP;
+      const frac = (min - eMin) / (toMin(next.start) - eMin);
+      return pauseTop + frac * pause.h;
+    }
+  }
+  return null;
+}
 
 export default function Timetable() {
   const { user } = useAuth();
@@ -235,6 +272,15 @@ function TimetableGrid({
   const week = weekState?.week ?? "A";
   const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
   const todayName = DAYS_FR[new Date().getDay()];
+  // Horloge vivante : re-rendu chaque 30 s pour déplacer la ligne « maintenant ».
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const isSchoolDay = todayName !== "Samedi" && todayName !== "Dimanche";
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowY = isSchoolDay ? yForMinute(nowMin) : null;
 
   // Regroupe les cours par case de départ « jour|ligne » (A et B côte à côte)
   const cellGroups = useMemo(() => {
@@ -283,10 +329,10 @@ function TimetableGrid({
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto pb-1">
             <div className="min-w-[880px]">
-              {/* En-tête des jours */}
+              {/* En-tête des jours — même géométrie que le corps */}
               <div
                 className="grid gap-2"
-                style={{ gridTemplateColumns: "64px repeat(5, 1fr)" }}
+                style={{ gridTemplateColumns: GRID_COLS }}
               >
                 <div />
                 {DAYS.map((d) => (
@@ -310,60 +356,10 @@ function TimetableGrid({
               </div>
 
               {/* Corps : positionnement absolu — les heures sont posées SUR les
-                  traits entre les créneaux, les pauses (récréation, déjeuner)
-                  occupent de vraies bandes horizontales, et les cours longs
-                  (EPS, Sécurité Civile) chevauchent la croix en un seul bloc. */}
+                  traits de l'axe de gauche, les pauses (récréation, déjeuner)
+                  occupent de vraies bandes horizontales, et une ligne «
+                  maintenant » suit l'heure réelle pendant la journée. */}
               <div className="relative" style={{ height: BODY_H }}>
-                {/* Bandes de pause, en travers de la grille */}
-                {PAUSES.map((pause) => {
-                  const idx = PERIODS.findIndex((p) => p.id === pause.after);
-                  if (idx < 0) return null;
-                  const top = ROW_TOPS[idx] + ROW_H + ROW_GAP;
-                  return (
-                    <div
-                      key={pause.label + idx}
-                      className="absolute left-0 right-0 flex items-center justify-center rounded-md border border-dashed border-amber-300/30 bg-amber-300/[0.04]"
-                      style={{ top, height: pause.h }}
-                    >
-                      <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-300/80">
-                        {pause.label}
-                      </span>
-                    </div>
-                  );
-                })}
-
-                {/* Étiquettes horaires : chaque heure une seule fois, centrée
-                    sur le trait qui la sépare du créneau suivant. Les fins qui
-                    précèdent une pause (10:05, 12:10, 14:35) sont aussi posées
-                    sur le trait du début de pause. */}
-                {PERIODS.map((p, i) => {
-                  const pauseAfter = PAUSES.find((pa) => pa.after === p.id);
-                  return (
-                    <div key={p.id}>
-                      <span
-                        className="absolute right-2 font-mono text-[10px] font-bold leading-none text-foreground/90"
-                        style={{
-                          top: ROW_TOPS[i],
-                          transform: "translateY(-50%)",
-                        }}
-                      >
-                        {p.start}
-                      </span>
-                      {(pauseAfter || i === PERIODS.length - 1) && (
-                        <span
-                          className="absolute right-2 font-mono text-[10px] leading-none text-muted-foreground"
-                          style={{
-                            top: ROW_TOPS[i] + ROW_H,
-                            transform: "translateY(-50%)",
-                          }}
-                        >
-                          {p.end}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-
                 {/* Cellules de fond (toutes les cases jour/créneau) */}
                 {PERIODS.map((p, i) =>
                   DAYS.map((day, di) => (
@@ -379,6 +375,98 @@ function TimetableGrid({
                     />
                   )),
                 )}
+
+                {/* Bandes de pause. Récréation : fine, contenue entre la fin de
+                    l'axe et les cases (ne déborde pas). Déjeuner : rendu comme
+                    un cours vide de la hauteur d'un créneau. */}
+                {PAUSES.map((pause) => {
+                  const idx = PERIODS.findIndex((p) => p.id === pause.after);
+                  if (idx < 0) return null;
+                  const top = ROW_TOPS[idx] + ROW_H + ROW_GAP;
+                  const isLunch = pause.kind === "lunch";
+                  return isLunch ? (
+                    <div
+                      key={pause.label + idx}
+                      className="absolute flex items-center justify-center rounded-xl border border-border/40 bg-secondary/25"
+                      style={{
+                        top,
+                        height: pause.h,
+                        left: `calc(${AXIS_W}px + 8px)`,
+                        right: 0,
+                      }}
+                    >
+                      <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
+                        {pause.label}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      key={pause.label + idx}
+                      className="absolute flex items-center justify-center rounded-md border border-dashed border-amber-300/30 bg-amber-300/[0.05]"
+                      style={{
+                        top,
+                        height: pause.h,
+                        left: AXIS_W,
+                        right: 0,
+                      }}
+                    >
+                      <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-300/80">
+                        {pause.label}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* Ligne « maintenant » : suit l'heure réelle de la journée. */}
+                {nowY !== null && (
+                  <div
+                    className="absolute pointer-events-none z-10"
+                    style={{ top: nowY, left: AXIS_W, right: 0 }}
+                  >
+                    <div className="relative h-0 border-t-2 border-red-400/80 shadow-[0_0_8px_rgba(248,113,113,0.5)]">
+                      <span className="absolute -top-[7px] -left-px size-3 rounded-full bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.8)]" />
+                      <span className="absolute -top-[9px] right-1 rounded bg-red-400/90 px-1.5 text-[9px] font-bold leading-[18px] text-background font-mono">
+                        {now.getHours()}:{String(now.getMinutes()).padStart(2, "0")}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Étiquettes horaires sur l'axe de GAUCHE : chaque heure une
+                    seule fois, centrée sur le trait qui sépare les créneaux. */}
+                {PERIODS.map((p, i) => {
+                  const pauseAfter = PAUSES.find((pa) => pa.after === p.id);
+                  return (
+                    <div key={p.id}>
+                      <span
+                        className="absolute font-mono text-[10px] font-bold leading-none text-foreground/90"
+                        style={{
+                          top: ROW_TOPS[i],
+                          left: 0,
+                          width: AXIS_W - 8,
+                          textAlign: "right",
+                          transform: "translateY(-50%)",
+                        }}
+                      >
+                        {p.start}
+                      </span>
+                      {(pauseAfter || i === PERIODS.length - 1) && (
+                        <span
+                          className="absolute font-mono text-[10px] leading-none text-muted-foreground"
+                          style={{
+                            top: ROW_TOPS[i] + ROW_H,
+                            left: 0,
+                            width: AXIS_W - 8,
+                            textAlign: "right",
+                            transform: "translateY(-50%)",
+                          }}
+                        >
+                          {p.end}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {/* Cours : posés sur leur créneau de départ, fusion verticale
                     sur plusieurs créneaux (EPS, Sécurité Civile) */}
