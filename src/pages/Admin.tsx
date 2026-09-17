@@ -828,7 +828,7 @@ function UserRow({
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Groupe du vendredi</Label>
+            <Label>Groupe</Label>
             <select
               value={(u as { group?: string | null }).group ?? ""}
               onChange={(e) =>
@@ -839,8 +839,8 @@ function UserRow({
               className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
             >
               <option value="">— Aucun —</option>
-              <option value="G1">Groupe 1 (Maths d'abord)</option>
-              <option value="G2">Groupe 2 (Français d'abord)</option>
+              <option value="G1">Groupe 1</option>
+              <option value="G2">Groupe 2</option>
             </select>
           </div>
           <div className="space-y-1.5 sm:col-span-2">

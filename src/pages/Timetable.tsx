@@ -1127,7 +1127,7 @@ function SlotForm({
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
         weekType,
-        ...(day === "Vendredi" && group ? { group } : {}),
+        ...(group ? { group } : {}),
         color: color || undefined,
       });
       toast.success(initial ? "Cours modifié." : "Cours ajouté à l'emploi du temps.");
@@ -1265,15 +1265,15 @@ function SlotForm({
           ))}
         </datalist>
       </div>
-      {day === "Vendredi" && (
+      {(
         <div className="space-y-1.5">
-          <Label>Groupe (vendredi)</Label>
+          <Label>Groupe</Label>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(
               [
                 [null, "Tous"],
-                ["G1", "Groupe 1 (Maths d'abord)"],
-                ["G2", "Groupe 2 (Français d'abord)"],
+                ["G1", "Groupe 1"],
+                ["G2", "Groupe 2"],
               ] as const
             ).map(([g, label]) => (
               <Button
@@ -1507,9 +1507,8 @@ function FridayGroupsCard() {
               <Users2 className="size-5 text-primary" /> Groupes du vendredi
             </CardTitle>
             <CardDescription>
-              Répartissez les élèves : Groupe 1 commence par Maths, Groupe 2 par
-              Français. Un créneau peut aussi être réservé à un groupe à la
-              création d'un cours le vendredi.
+              Répartissez les élèves en deux groupes. Un cours peut aussi être
+              réservé à un groupe à sa création, pour n'importe quel jour.
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => setShow((v) => !v)}>

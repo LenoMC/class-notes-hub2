@@ -266,11 +266,10 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label>Mon groupe du vendredi</Label>
+              <Label>Mon groupe</Label>
               <p className="text-xs text-muted-foreground">
-                Uniquement si votre classe fonctionne par groupes le vendredi :
-                <strong> Groupe 1</strong> commence par Maths, <strong>Groupe 2</strong>{" "}
-                par Français. Sinon, laissez sur « Aucun ».
+                Uniquement si votre classe fonctionne par groupes. Sinon,
+                laissez sur « Aucun ».
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {(

@@ -228,23 +228,20 @@ function Questionnaire({ user }: { user: Me }) {
 
         <div>
           <p className="mb-1 flex items-center gap-2 font-medium">
-            <Users2 className="size-4 text-primary" /> Groupe du vendredi
+            <Users2 className="size-4 text-primary" /> Groupe
             <span className="text-xs font-normal text-muted-foreground">
               (si votre classe fonctionne par groupes)
             </span>
           </p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Le vendredi, certaines classes sont réparties en deux groupes :{" "}
-            <strong>Groupe 1</strong> commence par <strong>Mathématiques</strong>,{" "}
-            <strong>Groupe 2</strong> par <strong>Français</strong>. Le
-            responsable de votre classe peut modifier cette attribution à tout
-            moment.
+            Votre classe est peut-être répartie en deux groupes. Le responsable
+            de votre classe peut modifier cette attribution à tout moment.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                ["G1", "Groupe 1 — commence par Maths"],
-                ["G2", "Groupe 2 — commence par Français"],
+                ["G1", "Groupe 1"],
+                ["G2", "Groupe 2"],
               ] as const
             ).map(([g, label]) => (
               <button

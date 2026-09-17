@@ -457,7 +457,7 @@ export const upsertSlot = mutation({
     teacher: v.optional(v.string()),
     room: v.optional(v.string()),
     weekType: v.optional(weekTypeValidator),
-    group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau spécial groupe (vendredi)
+    group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau réservé à un groupe
     color: v.optional(v.string()), // hex #RRGGBB, sinon couleur de la matière
   },
   handler: async (ctx, args) => {
@@ -491,11 +491,6 @@ export const upsertSlot = mutation({
     if (!singlePeriod && !canSpanPeriods(args.subject)) {
       throw new Error(
         "Seuls l'EPS et la Sécurité Civile peuvent occuper plusieurs créneaux d'affilée.",
-      );
-    }
-    if (args.group && args.day !== "Vendredi") {
-      throw new Error(
-        "Le créneau Groupe 1 / Groupe 2 s'applique uniquement au vendredi.",
       );
     }
     const { slotId, ...rest } = args;
