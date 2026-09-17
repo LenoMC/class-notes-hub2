@@ -20,11 +20,12 @@ export const PERIODS: Period[] = [
   { id: "P8", start: "15:50", end: "16:45" },
 ];
 
-/** Pauses de la journée : aucune matière possible pendant ces plages. */
-export const PAUSES: Array<{ after: string; label: string }> = [
-  { after: "P2", label: "Récréation" },
-  { after: "P4", label: "Déjeuner" },
-  { after: "P6", label: "Récréation" },
+/** Pauses de la journée : aucune matière possible pendant ces plages.
+    `h` = hauteur de la bande affichée dans l'EDT (px). */
+export const PAUSES: Array<{ after: string; label: string; h: number }> = [
+  { after: "P2", label: "Récréation", h: 16 },
+  { after: "P4", label: "Déjeuner", h: 30 },
+  { after: "P6", label: "Récréation", h: 16 },
 ];
 
 /** Créneaux disponibles pour un jour donné (tous identiques désormais). */

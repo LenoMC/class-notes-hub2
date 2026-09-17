@@ -93,6 +93,32 @@ function slotPlacement(slot: Slot): { startIdx: number; span: number } {
   return { startIdx: s, span: Math.max(e - s + 1, 1) };
 }
 
+/** Géométrie de la grille : hauteur d'un créneau, gouttière entre créneaux,
+    et position cumulée du haut de chaque créneau (bandes de pause incluses).
+    Sert à poser les cours en absolu, à cheval sur la croix entre deux
+    créneaux (EPS, Sécurité Civile). */
+const ROW_H = 84;
+const ROW_GAP = 8; // = gap-2
+const ROW_TOPS: number[] = (() => {
+  const tops: number[] = [];
+  let y = 0;
+  PERIODS.forEach((p, i) => {
+    tops[i] = y;
+    y += ROW_H;
+    const pause = PAUSES.find((pa) => pa.after === p.id);
+    y += ROW_GAP + (pause ? pause.h + ROW_GAP : 0);
+  });
+  return tops;
+})();
+
+/** Hauteur totale du corps de grille (créneaux + bandes de pause). */
+const BODY_H = ROW_TOPS[ROW_TOPS.length - 1] + ROW_H;
+
+/** Calculs de position d'une colonne jour (en absolu dans le corps). */
+const colLeft = (di: number) =>
+  `calc(64px + ${di} * ((100% - 96px) / 5 + 8px))`;
+const COL_WIDTH = "calc((100% - 96px) / 5)";
+
 export default function Timetable() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -256,11 +282,11 @@ function TimetableGrid({
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto pb-1">
-            <div className="min-w-[860px]">
+            <div className="min-w-[880px]">
               {/* En-tête des jours */}
               <div
-                className="grid gap-2 mb-2"
-                style={{ gridTemplateColumns: "92px repeat(5, 1fr)" }}
+                className="grid gap-2"
+                style={{ gridTemplateColumns: "64px repeat(5, 1fr)" }}
               >
                 <div />
                 {DAYS.map((d) => (
@@ -283,38 +309,57 @@ function TimetableGrid({
                 ))}
               </div>
 
-              {/* Corps : une ligne de grille par créneau fixe.
-                  Un cours de deux créneaux (ex. EPS 10:20 → 12:10) fusionne
-                  les lignes à la verticale, à cheval sur la croix. */}
-              <div
-                className="grid gap-2"
-                style={{
-                  gridTemplateColumns: "92px repeat(5, 1fr)",
-                  gridTemplateRows: `repeat(${PERIODS.length}, minmax(84px, auto))`,
-                }}
-              >
-                {/* Étiquettes des créneaux : heures empilées à la verticale
-                    (début en haut, fin en bas), pauses signalées entre deux
-                    créneaux (récréation, déjeuner). */}
-                {PERIODS.map((p, i) => {
-                  const pause = PAUSES.find((pa) => pa.after === PERIODS[i - 1]?.id);
+              {/* Corps : positionnement absolu — les heures sont posées SUR les
+                  traits entre les créneaux, les pauses (récréation, déjeuner)
+                  occupent de vraies bandes horizontales, et les cours longs
+                  (EPS, Sécurité Civile) chevauchent la croix en un seul bloc. */}
+              <div className="relative" style={{ height: BODY_H }}>
+                {/* Bandes de pause, en travers de la grille */}
+                {PAUSES.map((pause) => {
+                  const idx = PERIODS.findIndex((p) => p.id === pause.after);
+                  if (idx < 0) return null;
+                  const top = ROW_TOPS[idx] + ROW_H + ROW_GAP;
                   return (
                     <div
-                      key={p.id}
-                      style={{ gridRow: i + 1, gridColumn: 1 }}
-                      className="flex flex-col items-end justify-between pr-1.5 py-1.5"
+                      key={pause.label + idx}
+                      className="absolute left-0 right-0 flex items-center justify-center rounded-md border border-dashed border-amber-300/30 bg-amber-300/[0.04]"
+                      style={{ top, height: pause.h }}
                     >
-                      {pause && (
-                        <span className="text-[8px] uppercase tracking-widest text-amber-300/90 font-semibold">
-                          {pause.label}
-                        </span>
-                      )}
-                      <span className="font-mono text-[11px] font-bold leading-none">
+                      <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-300/80">
+                        {pause.label}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* Étiquettes horaires : chaque heure une seule fois, centrée
+                    sur le trait qui la sépare du créneau suivant. Les fins qui
+                    précèdent une pause (10:05, 12:10, 14:35) sont aussi posées
+                    sur le trait du début de pause. */}
+                {PERIODS.map((p, i) => {
+                  const pauseAfter = PAUSES.find((pa) => pa.after === p.id);
+                  return (
+                    <div key={p.id}>
+                      <span
+                        className="absolute right-2 font-mono text-[10px] font-bold leading-none text-foreground/90"
+                        style={{
+                          top: ROW_TOPS[i],
+                          transform: "translateY(-50%)",
+                        }}
+                      >
                         {p.start}
                       </span>
-                      <span className="font-mono text-[10px] leading-none text-muted-foreground">
-                        {p.end}
-                      </span>
+                      {(pauseAfter || i === PERIODS.length - 1) && (
+                        <span
+                          className="absolute right-2 font-mono text-[10px] leading-none text-muted-foreground"
+                          style={{
+                            top: ROW_TOPS[i] + ROW_H,
+                            transform: "translateY(-50%)",
+                          }}
+                        >
+                          {p.end}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -324,13 +369,19 @@ function TimetableGrid({
                   DAYS.map((day, di) => (
                     <div
                       key={`bg-${p.id}-${day}`}
-                      style={{ gridRow: i + 1, gridColumn: di + 2 }}
-                      className="rounded-xl border border-border/40 bg-secondary/25 p-1.5"
+                      className="absolute rounded-xl border border-border/40 bg-secondary/25"
+                      style={{
+                        top: ROW_TOPS[i],
+                        height: ROW_H,
+                        left: colLeft(di),
+                        width: COL_WIDTH,
+                      }}
                     />
                   )),
                 )}
 
-                {/* Cours : placés sur leur case de départ, avec fusion verticale */}
+                {/* Cours : posés sur leur créneau de départ, fusion verticale
+                    sur plusieurs créneaux (EPS, Sécurité Civile) */}
                 {[...cellGroups.entries()].map(([key, group]) => {
                   const [diStr, siStr] = key.split("|");
                   const di = Number(diStr);
@@ -338,14 +389,18 @@ function TimetableGrid({
                   const span = Math.max(
                     ...group.map((s) => slotPlacement(s).span),
                   );
+                  const lastIdx = startIdx + span - 1;
+                  const bottom = ROW_TOPS[lastIdx] + ROW_H;
                   return (
                     <div
                       key={key}
+                      className="absolute"
                       style={{
-                        gridRow: `${startIdx + 1} / span ${span}`,
-                        gridColumn: di + 2,
+                        top: ROW_TOPS[startIdx],
+                        height: bottom - ROW_TOPS[startIdx],
+                        left: colLeft(di),
+                        width: COL_WIDTH,
                       }}
-                      className="p-0"
                     >
                       <div
                         className={cn(
