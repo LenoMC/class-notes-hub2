@@ -245,10 +245,10 @@ export default function Chat() {
                         )}
                         <div
                           className={cn(
-                            "animate-bolt-pop max-w-full space-y-2 rounded-2xl px-3.5 py-2 text-sm leading-snug",
+                            "animate-bolt-pop max-w-full space-y-2 rounded-3xl px-4 py-2.5 text-sm leading-snug",
                             m.mine
                               ? "rounded-br-sm bg-primary text-primary-foreground font-medium shadow-md shadow-primary/20"
-                              : "rounded-bl-sm border border-border/70 bg-secondary/60",
+                              : "rounded-bl-sm border border-border bg-secondary",
                           )}
                         >
                           {m.text &&
@@ -265,10 +265,10 @@ export default function Chat() {
                               target="_blank"
                               rel="noreferrer"
                               className={cn(
-                                "flex items-center gap-2 rounded-xl border px-2.5 py-2 transition-colors",
+                                "flex items-center gap-2 rounded-2xl border px-3 py-2 transition-colors",
                                 m.mine
-                                  ? "border-primary-foreground/25 bg-primary-foreground/10 hover:bg-primary-foreground/20"
-                                  : "border-border/70 bg-background/60 hover:border-primary/50",
+                                  ? "border-primary-foreground/25 bg-background text-foreground hover:border-primary"
+                                  : "border-border bg-background hover:border-primary",
                               )}
                             >
                               <FileText className="size-4 shrink-0" />
@@ -296,7 +296,7 @@ export default function Chat() {
             </div>
 
             {attached && (
-              <div className="flex items-center gap-2 border-t border-border/60 bg-primary/5 px-3 py-2">
+              <div className="mx-3 mt-3 flex items-center gap-2 rounded-2xl border border-border bg-secondary px-3 py-2">
                 <FileText className="size-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{attached.title}</p>
@@ -333,7 +333,7 @@ export default function Chat() {
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Écrire un message…"
                 maxLength={1000}
-                className="h-10 flex-1 rounded-full bg-secondary/50"
+                className="h-10 flex-1 rounded-full bg-secondary"
               />
               <Button
                 type="submit"
@@ -399,7 +399,7 @@ export default function Chat() {
             value={ficheSearch}
             onChange={(e) => setFicheSearch(e.target.value)}
             placeholder="Rechercher par titre ou matière…"
-            className="h-9 bg-secondary/50"
+            className="h-9 bg-secondary"
           />
           <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
             {!fiches ? (
@@ -418,7 +418,7 @@ export default function Chat() {
                     setPickerOpen(false);
                     setFicheSearch("");
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2 text-left transition-colors hover:border-primary/60 cursor-pointer"
+                  className="flex w-full items-center gap-2 rounded-2xl border border-border bg-secondary px-3 py-2 text-left transition-colors hover:border-primary cursor-pointer"
                 >
                   <FileText className="size-4 shrink-0 text-primary" />
                   <span className="min-w-0 flex-1">
