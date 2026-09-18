@@ -328,26 +328,25 @@ function TimetableGrid({
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto scrollbar-none">
-            <div className="min-w-[880px]">
-              {/* En-tête des jours — même géométrie que le corps */}
-              <div
-                className="grid gap-2"
-                style={{ gridTemplateColumns: GRID_COLS }}
-              >
-                <div />
-                {DAYS.map((d) => (
+            <div className="min-w-[760px]">
+              {/* En-tête des jours — MÊME système de coordonnées absolu que le
+                  corps (colLeft/COL_WIDTH) : alignement garanti au pixel, sans
+                  dépendre d'une grille CSS distincte. */}
+              <div className="relative mb-2" style={{ height: 40 }}>
+                {DAYS.map((day, di) => (
                   <div
-                    key={d}
+                    key={day}
                     className={cn(
-                      "py-2 text-center text-sm font-bold tracking-wide rounded-lg border transition-colors",
-                      d === todayName
+                      "absolute flex flex-col items-center justify-center py-1.5 text-sm font-bold tracking-wide rounded-lg border transition-colors",
+                      day === todayName
                         ? "bg-primary/20 border-primary/50 text-primary shadow-[0_0_16px_rgba(91,116,201,0.25)]"
                         : "bg-secondary/60 border-border/50",
                     )}
+                    style={{ top: 0, height: 40, left: colLeft(di), width: COL_WIDTH }}
                   >
-                    {d}
-                    {d === todayName && (
-                      <span className="block text-[9px] font-mono font-normal opacity-75">
+                    <span>{day}</span>
+                    {day === todayName && (
+                      <span className="text-[9px] font-mono font-normal opacity-75 leading-none">
                         aujourd'hui
                       </span>
                     )}
