@@ -410,6 +410,80 @@ export const listSlots = query({
   },
 });
 
+// ---------- Chat de classe ----------
+
+/** Messages du chat de la classe de l'utilisateur (temps réel via Convex). */
+export const listChatMessages = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const user = await requireUser(ctx);
+    if (!user.classId) return [];
+    const rows = await ctx.db
+      .query("chatMessages")
+      .withIndex("by_class", (q) => q.eq("classId", user.classId!))
+      .order("desc")
+      .take(limit ?? 200);
+    return rows.reverse().map((m) => ({
+      _id: m._id,
+      text: m.text,
+      createdAt: m.createdAt,
+      authorId: m.authorId,
+      mine: m.authorId === user._id,
+    }));
+  },
+});
+
+/** Envoi d'un message dans le chat de sa classe (ou classe désignée pour un
+ *  admin global sans classe). */
+export const sendChatMessage = mutation({
+  args: { text: v.string() },
+  handler: async (ctx, { text }) => {
+    const user = await requireUser(ctx);
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("Message vide.");
+    if (trimmed.length > 1000) {
+      throw new Error("Message trop long (1000 caractères maximum).");
+    }
+    const classId = user.classId ?? user.adminOfClassId ?? null;
+    if (!classId) {
+      throw new Error(
+        "Rejoignez d'abord une classe (questionnaire d'accueil) pour discuter.",
+      );
+    }
+    await ctx.db.insert("chatMessages", {
+      classId,
+      authorId: user._id,
+      text: trimmed,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** Membres de la classe (affichés à côté du chat). */
+export const listChatMembers = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireUser(ctx);
+    const classId = me.isAdmin
+      ? me.adminOfClassId ?? me.classId ?? null
+      : me.classId ?? null;
+    if (!classId) return [];
+    const members = await ctx.db
+      .query("users")
+      .withIndex("by_class", (q) => q.eq("classId", classId))
+      .collect();
+    return members
+      .filter((u) => !u.isAnonymous)
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      .map((u) => ({
+        _id: u._id,
+        name: u.name ?? null,
+        email: u.email ?? null,
+        isMe: u._id === me._id,
+      }));
+  },
+});
+
 export const listMySlots = query({
   args: { week: v.optional(weekTypeValidator) },
   handler: async (ctx, { week }) => {
@@ -676,8 +750,8 @@ export const listAdmins = query({
 // ---------- Fichiers de la classe (avec infos créneau) ----------
 
 export const listClassFiles = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { kind: v.optional(v.union(v.literal("cours"), v.literal("devoir"))) },
+  handler: async (ctx, { kind }) => {
     const user = await requireUser(ctx);
     if (!user.classId) return [];
     const slots = await ctx.db
@@ -693,6 +767,7 @@ export const listClassFiles = query({
       fileType: string;
       createdAt: number;
       hasFile: boolean;
+      storageId: Id<"_storage"> | null;
       externalUrl: string | null;
       slotId: Id<"timetableSlots">;
       day: string;
@@ -705,6 +780,7 @@ export const listClassFiles = query({
         .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
         .collect();
       for (const f of slotFiles) {
+        if (kind && f.kind !== kind) continue;
         files.push({
           _id: f._id,
           title: f.title,
@@ -712,10 +788,11 @@ export const listClassFiles = query({
           description: f.description ?? null,
           fileName: f.fileName,
           fileType: f.fileType,
-          createdAt: f.createdAt,
-          hasFile: !!f.storageId,
-          externalUrl: f.externalUrl ?? null,
-          slotId: slot._id,
+      createdAt: f.createdAt,
+      hasFile: !!f.storageId,
+      storageId: f.storageId ?? null,
+      externalUrl: f.externalUrl ?? null,
+      slotId: slot._id,
           day: slot.day,
           start: slot.start,
           subject: slot.subject,

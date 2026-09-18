@@ -126,11 +126,19 @@ const schema = defineSchema(
       createdAt: v.number(),
     }),
 
-    // Ancre de l'alternance A/B : la semaine du startDay est une semaine A
-    weekAnchor: defineTable({
-      startDay: v.string(), // lundi "YYYY-MM-DD" d'une semaine A
-    }),
-  },
+  // Ancre de l'alternance A/B : la semaine du startDay est une semaine A
+  weekAnchor: defineTable({
+    startDay: v.string(), // lundi "YYYY-MM-DD" d'une semaine A
+  }),
+
+  // Chat direct de classe
+  chatMessages: defineTable({
+    classId: v.id("classes"),
+    authorId: v.id("users"),
+    text: v.string(),
+    createdAt: v.number(),
+  }).index("by_class", ["classId"]),
+},
   {
     schemaValidation: false,
   },

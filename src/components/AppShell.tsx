@@ -12,9 +12,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
   CalendarDays,
+  FolderOpen,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessagesSquare,
   Settings,
   Shield,
   X,
@@ -26,6 +28,8 @@ import type { ReactNode } from "react";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Accueil", icon: LayoutDashboard },
   { to: "/edt", label: "EDT", icon: CalendarDays },
+  { to: "/fiches", label: "Fiches", icon: FolderOpen },
+  { to: "/chat", label: "Chat", icon: MessagesSquare },
 ];
 
 export function AppShell({
