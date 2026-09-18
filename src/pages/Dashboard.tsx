@@ -420,7 +420,7 @@ function TodaySchedule({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       <span
-                        className="rounded border px-1.5 py-0.5 mr-2"
+                        className="mr-2 inline-block rounded-full px-2.5 py-0.5 font-semibold"
                         style={subjectStyle(slot.subject, (slot as { color?: string }).color)}
                       >
                         {slot.subject}
