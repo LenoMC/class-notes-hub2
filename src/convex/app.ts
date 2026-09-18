@@ -423,24 +423,61 @@ export const listChatMessages = query({
       .withIndex("by_class", (q) => q.eq("classId", user.classId!))
       .order("desc")
       .take(limit ?? 200);
-    return rows.reverse().map((m) => ({
-      _id: m._id,
-      text: m.text,
-      createdAt: m.createdAt,
-      authorId: m.authorId,
-      mine: m.authorId === user._id,
-    }));
+    // Enrichit les messages avec les fiches jointes (titre + type de pièce)
+    const enriched = [] as Array<{
+      _id: Id<"chatMessages">;
+      text: string;
+      createdAt: number;
+      authorId: Id<"users">;
+      mine: boolean;
+      fiche: null | {
+        _id: Id<"courseFiles">;
+        title: string;
+        kind: "cours" | "devoir";
+        hasFile: boolean;
+        storageId: Id<"_storage"> | null;
+        externalUrl: string | null;
+      };
+    }>;
+    for (const m of rows.reverse()) {
+      let fiche: (typeof enriched)[number]["fiche"] = null;
+      if (m.ficheId) {
+        const f = await ctx.db.get(m.ficheId);
+        if (f) {
+          fiche = {
+            _id: f._id,
+            title: f.title,
+            kind: f.kind,
+            hasFile: !!f.storageId,
+            storageId: f.storageId ?? null,
+            externalUrl: f.externalUrl ?? null,
+          };
+        }
+      }
+      enriched.push({
+        _id: m._id,
+        text: m.text,
+        createdAt: m.createdAt,
+        authorId: m.authorId,
+        mine: m.authorId === user._id,
+        fiche,
+      });
+    }
+    return enriched;
   },
 });
 
 /** Envoi d'un message dans le chat de sa classe (ou classe désignée pour un
- *  admin global sans classe). */
+ *  admin global sans classe). Une fiche de la classe peut être jointe. */
 export const sendChatMessage = mutation({
-  args: { text: v.string() },
-  handler: async (ctx, { text }) => {
+  args: {
+    text: v.string(),
+    ficheId: v.optional(v.id("courseFiles")),
+  },
+  handler: async (ctx, { text, ficheId }) => {
     const user = await requireUser(ctx);
     const trimmed = text.trim();
-    if (!trimmed) throw new Error("Message vide.");
+    if (!trimmed && !ficheId) throw new Error("Message vide.");
     if (trimmed.length > 1000) {
       throw new Error("Message trop long (1000 caractères maximum).");
     }
@@ -450,10 +487,20 @@ export const sendChatMessage = mutation({
         "Rejoignez d'abord une classe (questionnaire d'accueil) pour discuter.",
       );
     }
+    // La fiche jointe doit appartenir à un créneau de la même classe.
+    if (ficheId) {
+      const fiche = await ctx.db.get(ficheId);
+      if (!fiche) throw new Error("Fiche introuvable.");
+      const slot = await ctx.db.get(fiche.slotId);
+      if (!slot || slot.classId !== classId) {
+        throw new Error("Cette fiche n'appartient pas à votre classe.");
+      }
+    }
     await ctx.db.insert("chatMessages", {
       classId,
       authorId: user._id,
       text: trimmed,
+      ...(ficheId ? { ficheId } : {}),
       createdAt: Date.now(),
     });
   },

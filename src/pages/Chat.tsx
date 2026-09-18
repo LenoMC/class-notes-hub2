@@ -9,13 +9,30 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
-import { MessagesSquare, Send, Users } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  FileText,
+  MessagesSquare,
+  Paperclip,
+  Send,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -48,6 +65,26 @@ type ChatMessage = {
   createdAt: number;
   authorId: string;
   mine: boolean;
+  fiche: null | {
+    _id: string;
+    title: string;
+    kind: "cours" | "devoir";
+    hasFile: boolean;
+    storageId: string | null;
+    externalUrl: string | null;
+  };
+};
+
+type FicheLite = {
+  _id: string;
+  title: string;
+  kind: "cours" | "devoir";
+  subject: string;
+  day: string;
+  start: string;
+  hasFile: boolean;
+  storageId: string | null;
+  externalUrl: string | null;
 };
 
 export default function Chat() {
@@ -63,10 +100,17 @@ export default function Chat() {
         isMe: boolean;
       }>
     | undefined;
+  const fiches = useQuery(
+    api.app.listClassFiles,
+    user?.classId ? {} : "skip",
+  ) as FicheLite[] | undefined;
   const sendMessage = useMutation(api.app.sendChatMessage);
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [attached, setAttached] = useState<FicheLite | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [ficheSearch, setFicheSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const authorNames = new Map<string, { name: string | null; email: string | null }>();
@@ -85,17 +129,31 @@ export default function Chat() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !attached) || sending) return;
     setSending(true);
     try {
-      await sendMessage({ text });
+      await sendMessage({
+        text,
+        ficheId: attached
+          ? (attached._id as Id<"courseFiles">)
+          : undefined,
+      });
       setDraft("");
+      setAttached(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Envoi impossible");
     } finally {
       setSending(false);
     }
   };
+
+  const ficheResults = (fiches ?? []).filter((f) =>
+    ficheSearch.trim()
+      ? `${f.title} ${f.subject}`
+          .toLowerCase()
+          .includes(ficheSearch.trim().toLowerCase())
+      : true,
+  );
 
   const noClass = user && !user.classId && !user.adminOfClassId;
 
@@ -187,15 +245,48 @@ export default function Chat() {
                         )}
                         <div
                           className={cn(
-                            "animate-bolt-pop rounded-2xl px-3.5 py-2 text-sm leading-snug",
+                            "animate-bolt-pop max-w-full space-y-2 rounded-2xl px-3.5 py-2 text-sm leading-snug",
                             m.mine
                               ? "rounded-br-sm bg-primary text-primary-foreground font-medium shadow-md shadow-primary/20"
                               : "rounded-bl-sm border border-border/70 bg-secondary/60",
                           )}
                         >
-                          {m.text.split("\n").map((line, j) => (
-                            <p key={j}>{line}</p>
-                          ))}
+                          {m.text &&
+                            m.text.split("\n").map((line, j) => (
+                              <p key={j}>{line}</p>
+                            ))}
+                          {m.fiche && (
+                            <a
+                              href={
+                                m.fiche.hasFile && m.fiche.storageId
+                                  ? undefined
+                                  : (m.fiche.externalUrl ?? undefined)
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                              className={cn(
+                                "flex items-center gap-2 rounded-xl border px-2.5 py-2 transition-colors",
+                                m.mine
+                                  ? "border-primary-foreground/25 bg-primary-foreground/10 hover:bg-primary-foreground/20"
+                                  : "border-border/70 bg-background/60 hover:border-primary/50",
+                              )}
+                            >
+                              <FileText className="size-4 shrink-0" />
+                              <span className="min-w-0 flex-1 text-left">
+                                <span className="block truncate text-xs font-semibold">
+                                  {m.fiche.title}
+                                </span>
+                                <span className="block text-[10px] opacity-70 uppercase">
+                                  Fiche · {m.fiche.kind}
+                                </span>
+                              </span>
+                              {m.fiche.hasFile ? (
+                                <FicheDownload storageId={m.fiche.storageId} mine={m.mine} />
+                              ) : m.fiche.externalUrl ? (
+                                <ExternalLink className="size-4 shrink-0" />
+                              ) : null}
+                            </a>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -204,10 +295,39 @@ export default function Chat() {
               )}
             </div>
 
+            {attached && (
+              <div className="flex items-center gap-2 border-t border-border/60 bg-primary/5 px-3 py-2">
+                <FileText className="size-4 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{attached.title}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Fiche jointe · {attached.subject} · {attached.day} {attached.start}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAttached(null)}
+                  className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground cursor-pointer"
+                  aria-label="Retirer la pièce jointe"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSend}
               className="flex items-center gap-2 border-t border-border/60 p-3"
             >
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-10 shrink-0 rounded-full text-muted-foreground hover:text-primary"
+                onClick={() => setPickerOpen(true)}
+                aria-label="Joindre une fiche"
+              >
+                <Paperclip className="size-4" />
+              </Button>
               <Input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -218,7 +338,7 @@ export default function Chat() {
               <Button
                 type="submit"
                 size="icon"
-                disabled={!draft.trim() || sending}
+                disabled={(!draft.trim() && !attached) || sending}
                 className="size-10 shrink-0 rounded-full"
                 aria-label="Envoyer"
               >
@@ -263,6 +383,95 @@ export default function Chat() {
           </Card>
         </div>
       )}
+
+      {/* Sélecteur de fiche à joindre */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="size-4 text-primary" /> Joindre une fiche
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez une fiche publiée sur l'emploi du temps de votre classe.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={ficheSearch}
+            onChange={(e) => setFicheSearch(e.target.value)}
+            placeholder="Rechercher par titre ou matière…"
+            className="h-9 bg-secondary/50"
+          />
+          <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+            {!fiches ? (
+              <Skeleton className="h-10 w-full" />
+            ) : ficheResults.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Aucune fiche trouvée.
+              </p>
+            ) : (
+              ficheResults.map((f) => (
+                <button
+                  key={f._id}
+                  type="button"
+                  onClick={() => {
+                    setAttached(f);
+                    setPickerOpen(false);
+                    setFicheSearch("");
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2 text-left transition-colors hover:border-primary/60 cursor-pointer"
+                >
+                  <FileText className="size-4 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {f.title}
+                    </span>
+                    <span className="block truncate text-[10px] text-muted-foreground">
+                      {f.subject} · {f.day} {f.start}
+                    </span>
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 text-[9px] uppercase"
+                  >
+                    {f.kind}
+                  </Badge>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppShell>
+  );
+}
+
+/** Bouton de téléchargement d'une fiche jointe à un message. */
+function FicheDownload({
+  storageId,
+  mine,
+}: {
+  storageId: string | null;
+  mine: boolean;
+}) {
+  const url = useQuery(
+    api.app.getFileUrl,
+    storageId ? { storageId: storageId as Id<"_storage"> } : "skip",
+  );
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Télécharger la fiche"
+      className="shrink-0 rounded-full p-1 transition-colors"
+    >
+      <Download
+        className={cn(
+          "size-4",
+          mine ? "text-primary-foreground" : "text-primary",
+        )}
+      />
+    </a>
   );
 }
