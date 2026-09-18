@@ -506,6 +506,20 @@ export const sendChatMessage = mutation({
   },
 });
 
+/** Suppression de son propre message (ou par un admin global). */
+export const deleteChatMessage = mutation({
+  args: { messageId: v.id("chatMessages") },
+  handler: async (ctx, { messageId }) => {
+    const user = await requireUser(ctx);
+    const message = await ctx.db.get(messageId);
+    if (!message) throw new Error("Message introuvable.");
+    if (message.authorId !== user._id && !user.isAdmin) {
+      throw new Error("Vous ne pouvez supprimer que vos propres messages.");
+    }
+    await ctx.db.delete(messageId);
+  },
+});
+
 /** Membres de la classe (affichés à côté du chat). */
 export const listChatMembers = query({
   args: {},

@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -30,6 +31,7 @@ import {
   MessagesSquare,
   Paperclip,
   Send,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -105,12 +107,14 @@ export default function Chat() {
     user?.classId ? {} : "skip",
   ) as FicheLite[] | undefined;
   const sendMessage = useMutation(api.app.sendChatMessage);
+  const deleteMessage = useMutation(api.app.deleteChatMessage);
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [attached, setAttached] = useState<FicheLite | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ficheSearch, setFicheSearch] = useState("");
+  const [toDelete, setToDelete] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const authorNames = new Map<string, { name: string | null; email: string | null }>();
@@ -154,6 +158,16 @@ export default function Chat() {
           .includes(ficheSearch.trim().toLowerCase())
       : true,
   );
+
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    try {
+      await deleteMessage({ messageId: toDelete._id as Id<"chatMessages"> });
+      setToDelete(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Suppression impossible");
+    }
+  };
 
   const noClass = user && !user.classId && !user.adminOfClassId;
 
@@ -219,7 +233,7 @@ export default function Chat() {
                     <div
                       key={m._id}
                       className={cn(
-                        "flex items-end gap-2",
+                        "group flex items-end gap-2",
                         m.mine && "flex-row-reverse",
                       )}
                     >
@@ -288,6 +302,19 @@ export default function Chat() {
                             </a>
                           )}
                         </div>
+                        {(m.mine || user?.isAdmin) && (
+                          <button
+                            type="button"
+                            onClick={() => setToDelete(m)}
+                            className={cn(
+                              "mx-1 rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100 cursor-pointer",
+                              m.mine && "justify-self-end",
+                            )}
+                            aria-label="Supprimer le message"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -383,6 +410,31 @@ export default function Chat() {
           </Card>
         </div>
       )}
+
+      {/* Confirmation de suppression d'un message */}
+      <Dialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Supprimer ce message ?</DialogTitle>
+            <DialogDescription>
+              Il sera définitivement retiré du chat de la classe.
+            </DialogDescription>
+          </DialogHeader>
+          {toDelete && (
+            <p className="rounded-2xl border border-border bg-secondary px-3.5 py-2.5 text-sm text-muted-foreground line-clamp-3">
+              {toDelete.text || "(fiche jointe)"}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setToDelete(null)}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              <Trash2 className="mr-1.5 size-4" /> Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Sélecteur de fiche à joindre */}
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
