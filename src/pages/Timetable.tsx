@@ -327,7 +327,7 @@ function TimetableGrid({
 
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
-          <div className="overflow-x-auto pb-1">
+          <div className="overflow-x-auto scrollbar-none">
             <div className="min-w-[880px]">
               {/* En-tête des jours — même géométrie que le corps */}
               <div

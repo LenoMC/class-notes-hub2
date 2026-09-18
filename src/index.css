@@ -104,6 +104,14 @@
 }
 
 @layer utilities {
+  /* Masque les barres de défilement tout en laissant le défilement actif. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
   .text-bolt {
     color: var(--primary);
     text-shadow: 0 0 24px var(--glow), 0 0 64px var(--glow);
