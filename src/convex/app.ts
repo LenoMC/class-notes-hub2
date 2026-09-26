@@ -65,6 +65,8 @@ export const me = query({
       options: user.options ?? [],
       group: user.group ?? null,
       questionnaireDone: !!user.questionnaireDone,
+      phone: user.phone ?? null,
+      discordId: user.discordId ?? null,
     };
   },
 });
@@ -148,15 +150,38 @@ export const submitAccessRequest = mutation({
       status: "pending",
       createdAt: Date.now(),
     });
-    // Notification email aux administrateurs globaux (action séparée)
+    // Notification email + SMS + MP Discord aux administrateurs globaux
     const admins = (await ctx.db.query("users").collect()).filter(
       (u) => u.isAdmin && u.email,
     );
-    await ctx.scheduler.runAfter(0, api.app.sendApprovalEmails, {
-      to: admins.map((a) => a.email!),
-      userName: user.name ?? user.email,
-      userEmail: user.email,
-    });
+    const adminEmails = admins.map((a) => a.email!);
+    const adminPhones = admins
+      .map((a) => a.phone)
+      .filter((p): p is string => !!p);
+    const adminDiscordIds = admins
+      .map((a) => a.discordId)
+      .filter((d): d is string => !!d);
+    if (adminEmails.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendApprovalEmails, {
+        to: adminEmails,
+        userName: user.name ?? user.email,
+        userEmail: user.email,
+      });
+    }
+    if (adminPhones.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendApprovalSms, {
+        phones: adminPhones,
+        userName: user.name ?? user.email,
+        userEmail: user.email,
+      });
+    }
+    if (adminDiscordIds.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendApprovalDiscordDm, {
+        discordIds: adminDiscordIds,
+        userName: user.name ?? user.email,
+        userEmail: user.email,
+      });
+    }
     return true;
   },
 });
@@ -173,7 +198,7 @@ export const sendApprovalEmails = action({
     // URL publique du SITE (pas du backend Convex !). À définir via
     // `bunx convex env set PUBLIC_SITE_URL https://votre-site.fr`.
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const subject = `Coursy — nouvelle demande d'accès à approuver (${userName})`;
+    const subject = `Recoursy — nouvelle demande d'accès à approuver (${userName})`;
     // Email HTML propre via Resend (RESEND_API_KEY). Fallback : console.
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
@@ -185,7 +210,7 @@ export const sendApprovalEmails = action({
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Coursy — Nouvelle demande d'accès</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Recoursy — Nouvelle demande d'accès</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
@@ -199,7 +224,7 @@ export const sendApprovalEmails = action({
               : `<p style="margin:0 0 8px;font-size:14px">Ouvrez l'administration du site (onglet « Approbations ») pour examiner la preuve.</p>`
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de Coursy.
+            Vous recevez cet email car vous êtes administrateur global de Recoursy.
           </p>
         </div>
       </div>`;
@@ -207,7 +232,7 @@ export const sendApprovalEmails = action({
       await axios.post(
         "https://api.resend.com/emails",
         {
-          from: "Coursy <onboarding@resend.dev>",
+          from: "Recoursy <onboarding@resend.dev>",
           to,
           subject,
           html,
@@ -221,6 +246,88 @@ export const sendApprovalEmails = action({
       );
     } catch (err) {
       console.warn("[approbations] échec envoi Resend :", err);
+    }
+  },
+});
+
+/** Envoi d'un SMS à chaque admin qui a enregistré un numéro (Telnyx). */
+export const sendApprovalSms = action({
+  args: {
+    phones: v.array(v.string()),
+    userName: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, { phones, userName, userEmail }) => {
+    const apiKey = process.env.TELNYX_API_KEY;
+    const from = process.env.TELNYX_PHONE_NUMBER;
+    if (!apiKey || !from || phones.length === 0) {
+      console.warn("[SMS] Telnyx non configuré — SMS ignorés.");
+      return;
+    }
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const text = `Recoursy : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
+    for (const phone of phones) {
+      try {
+        await axios.post(
+          "https://api.telnyx.com/v2/messages",
+          {
+            from,
+            to: phone,
+            text,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      } catch (err) {
+        console.warn("[SMS] échec vers", phone, err);
+      }
+    }
+  },
+});
+
+/** Envoi d'un MP Discord à chaque admin qui a lié son compte (bot Discord).
+    Nécessite DISCORD_BOT_TOKEN et que l'admin partage un serveur avec le bot. */
+export const sendApprovalDiscordDm = action({
+  args: {
+    discordIds: v.array(v.string()),
+    userName: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, { discordIds, userName, userEmail }) => {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token || discordIds.length === 0) {
+      console.warn("[Discord] bot non configuré — MPs ignorés.");
+      return;
+    }
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const content = `**Recoursy — nouvelle demande d'accès**\n${userName} (${userEmail}) a envoyé sa preuve Arsene76 et attend votre approbation.${siteUrl ? `\n<${siteUrl}/admin>` : ""}`;
+    const headers = {
+      Authorization: `Bot ${token}`,
+      "Content-Type": "application/json",
+    };
+    for (const discordId of discordIds) {
+      try {
+        // 1) Ouvre un canal de MP avec l'utilisateur
+        const channelRes = await axios.post(
+          "https://discord.com/api/v10/users/@me/channels",
+          { recipient_id: discordId },
+          { headers },
+        );
+        const channelId = channelRes.data?.id as string | undefined;
+        if (!channelId) continue;
+        // 2) Envoie le message dans ce canal
+        await axios.post(
+          `https://discord.com/api/v10/channels/${channelId}/messages`,
+          { content },
+          { headers },
+        );
+      } catch (err) {
+        console.warn("[Discord] échec MP vers", discordId, err);
+      }
     }
   },
 });
@@ -310,8 +417,10 @@ export const updateProfile = mutation({
     classId: v.optional(v.union(v.id("classes"), v.null())),
     options: v.optional(v.array(v.string())),
     group: v.optional(v.union(v.literal("G1"), v.literal("G2"), v.null())),
+    phone: v.optional(v.union(v.string(), v.null())),
+    discordId: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, { name, classId, options, group }) => {
+  handler: async (ctx, { name, classId, options, group, phone, discordId }) => {
     const user = await requireUser(ctx);
     const update: Record<string, unknown> = {};
     if (name !== undefined) update.name = name.trim() || undefined;
@@ -321,6 +430,23 @@ export const updateProfile = mutation({
       update.questionnaireDone = true;
     }
     if (group !== undefined) update.group = group ?? undefined;
+    // Notifications admins : téléphone E.164 et ID Discord (chiffres only)
+    if (phone !== undefined) {
+      const p = phone?.trim() || "";
+      if (p && !/^\+\d{8,15}$/.test(p)) {
+        throw new Error(
+          "Numéro invalide : format international attendu, ex. +33612345678.",
+        );
+      }
+      update.phone = p || undefined;
+    }
+    if (discordId !== undefined) {
+      const d = discordId?.trim() || "";
+      if (d && !/^\d{15,21}$/.test(d)) {
+        throw new Error("Identifiant Discord invalide (17 à 20 chiffres).");
+      }
+      update.discordId = d || undefined;
+    }
     await ctx.db.patch(user._id, update);
   },
 });

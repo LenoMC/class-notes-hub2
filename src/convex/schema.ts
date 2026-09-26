@@ -69,7 +69,7 @@ const schema = defineSchema(
 
       role: v.optional(roleValidator), // role of the user. do not remove
 
-      // Champs applicatif Coursy
+      // Champs applicatif Recoursy
       isAdmin: v.optional(v.boolean()), // administrateur global du site
       isClassAdmin: v.optional(v.boolean()), // responsable (admin) de sa classe
       classId: v.optional(v.id("classes")),
@@ -77,6 +77,8 @@ const schema = defineSchema(
       options: v.optional(v.array(optionValidator)), // options choisies (1 à 4)
       group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // groupe du vendredi
       questionnaireDone: v.optional(v.boolean()),
+      phone: v.optional(v.string()), // téléphone E.164 (+33...) pour les SMS admins
+      discordId: v.optional(v.string()), // ID Discord pour les MPs du bot
     })
       .index("email", ["email"]) // index for the email. do not remove or modify
       .index("by_class", ["classId"]),

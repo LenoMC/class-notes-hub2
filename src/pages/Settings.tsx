@@ -21,7 +21,9 @@ import {
   CheckCircle2,
   KeyRound,
   Mail,
+  MessageCircle,
   Pencil,
+  Phone,
   Save,
   Shield,
   UserCog,
@@ -48,6 +50,8 @@ export default function Settings() {
   const [classId, setClassId] = useState<string>("");
   const [options, setOptions] = useState<string[]>([]);
   const [group, setGroup] = useState<"G1" | "G2" | null>(null);
+  const [phone, setPhone] = useState("");
+  const [discordId, setDiscordId] = useState("");
   const [saving, setSaving] = useState(false);
   const [emailEditing, setEmailEditing] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -63,6 +67,8 @@ export default function Settings() {
     setClassId(user.classId ?? "");
     setOptions(user.options ?? []);
     setGroup((user as { group?: "G1" | "G2" | null }).group ?? null);
+    setPhone((user as { phone?: string | null }).phone ?? "");
+    setDiscordId((user as { discordId?: string | null }).discordId ?? "");
   }, [user]);
 
   if (isLoading) {
@@ -82,7 +88,9 @@ export default function Settings() {
     name !== (user.name ?? "") ||
     classId !== (user.classId ?? "") ||
     JSON.stringify(options) !== JSON.stringify(user.options ?? []) ||
-    group !== ((user as { group?: "G1" | "G2" | null }).group ?? null);
+    group !== ((user as { group?: "G1" | "G2" | null }).group ?? null) ||
+    phone !== ((user as { phone?: string | null }).phone ?? "") ||
+    discordId !== ((user as { discordId?: string | null }).discordId ?? "");
 
   const toggleOption = (opt: string) => {
     setOptions((prev) => {
@@ -111,6 +119,8 @@ export default function Settings() {
         classId: (classId || null) as Id<"classes"> | null,
         options,
         group,
+        phone: phone.trim() || null,
+        discordId: discordId.trim() || null,
       });
       toast.success("Vos informations ont été mises à jour.");
     } catch (err) {
@@ -264,6 +274,44 @@ export default function Settings() {
               </div>
               {ruleError && <p className="text-xs text-destructive">{ruleError}</p>}
             </div>
+
+            {/* Notifications admins : téléphone + Discord */}
+            {user.isAdmin && (
+              <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div>
+                  <Label className="flex items-center gap-1.5">
+                    <Phone className="size-4 text-primary" /> Numéro de téléphone
+                  </Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Format international, ex. +33612345678. Vous recevrez un SMS
+                    à chaque nouvelle demande d'accès (service Telnyx).
+                  </p>
+                </div>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+33612345678"
+                  className="bg-secondary"
+                />
+                <div>
+                  <Label className="flex items-center gap-1.5">
+                    <MessageCircle className="size-4 text-primary" /> Identifiant Discord
+                  </Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Votre ID Discord (Paramètres → Avancés → Mode développeur,
+                    puis « Copier l'identifiant » sur votre profil). Le bot vous
+                    enverra un MP à chaque nouvelle demande — il doit partager un
+                    serveur avec vous.
+                  </p>
+                </div>
+                <Input
+                  value={discordId}
+                  onChange={(e) => setDiscordId(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="123456789012345678"
+                  className="bg-secondary font-mono"
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Mon groupe</Label>

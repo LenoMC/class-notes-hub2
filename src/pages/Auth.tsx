@@ -159,7 +159,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         code,
       });
       if (result?.signingIn) {
-        toast.success("Email vérifié. Bienvenue sur Coursy.");
+        toast.success("Email vérifié. Bienvenue sur Recoursy.");
         navigate(redirect, { replace: true });
       } else {
         setError(
@@ -260,7 +260,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center pb-4">
                 <button onClick={goHome} className="flex justify-center cursor-pointer" aria-label="Accueil">
-                  <img src={logo} alt="Coursy" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
+                  <img src={logo} alt="Recoursy" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
                 </button>
                 <CardTitle className="text-2xl">Connexion</CardTitle>
                 <CardDescription className="mt-1">Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
@@ -479,7 +479,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground border-t border-border/60">
             <Link to="/" className="hover:text-primary transition-colors">
-              Coursy — cours, devoirs et emploi du temps
+              Recoursy — cours, devoirs et emploi du temps
             </Link>
           </div>
         </Card>
