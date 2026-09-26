@@ -170,51 +170,57 @@ export const sendApprovalEmails = action({
   },
   handler: async (ctx, { to, userName, userEmail }) => {
     if (to.length === 0) return;
-    const siteUrl =
-      process.env.SITE_URL || process.env.VLY_APP_URL || "https://coursflow.freebuff.app";
-    const subject = `CoursFlow — nouvelle demande d'accès à approuver (${userName})`;
+    // URL publique du SITE (pas du backend Convex !). À définir via
+    // `bunx convex env set PUBLIC_SITE_URL https://votre-site.fr`.
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const subject = `Coursy — nouvelle demande d'accès à approuver (${userName})`;
+    // Email HTML propre via Resend (RESEND_API_KEY). Fallback : console.
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.warn(
+        "[approbations] RESEND_API_KEY manquante : email non envoyé.",
+      );
+      return;
+    }
     const html = `
-      <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">CoursFlow — Nouvelle demande d'accès</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Coursy — Nouvelle demande d'accès</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
             <strong>${userName}</strong> (${userEmail}) a soumis une capture d'écran
             de preuve (Arsene76) et attend votre approbation.
           </p>
-          <p style="margin:0 0 20px;font-size:14px">
-            Ouvrez l'administration du site pour examiner la preuve :
-          </p>
-          <a href="${siteUrl}/admin" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:14px">
-            Examiner la demande
-          </a>
+          ${
+            siteUrl
+              ? `<p style="margin:0 0 20px;font-size:14px">Ouvrez l'administration du site pour examiner la preuve :</p>
+          <a href="${siteUrl}/admin" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:14px">Examiner la demande</a>`
+              : `<p style="margin:0 0 8px;font-size:14px">Ouvrez l'administration du site (onglet « Approbations ») pour examiner la preuve.</p>`
+          }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de CoursFlow.
+            Vous recevez cet email car vous êtes administrateur global de Coursy.
           </p>
         </div>
       </div>`;
-    // Même canal email que les codes de vérification (convex/auth.ts).
-    // Le contenu détaillé est visible via le lien vers l'administration.
-    const message = `Nouvelle demande d'acces CoursFlow : ${userName} (${userEmail}) a envoye sa preuve Arsene76. Approuvez-la ici : ${siteUrl}/admin`;
-    for (const email of to) {
-      try {
-        await axios.post(
-          "https://auth.freebuff.app/send_otp",
-          {
-            to: email,
-            otp: message.slice(0, 900),
-            appName: process.env.VLY_APP_NAME || "CoursFlow",
+    try {
+      await axios.post(
+        "https://api.resend.com/emails",
+        {
+          from: "Coursy <onboarding@resend.dev>",
+          to,
+          subject,
+          html,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
           },
-          {
-            headers: {
-              "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
-            },
-          },
-        );
-      } catch (err) {
-        console.warn("[approbations] email non envoyé à", email, err);
-      }
+        },
+      );
+    } catch (err) {
+      console.warn("[approbations] échec envoi Resend :", err);
     }
   },
 });
