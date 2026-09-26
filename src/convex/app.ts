@@ -354,10 +354,41 @@ export const sendApprovalDiscordDm = action({
       return;
     }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const content = `**Recoursy — nouvelle demande d'accès**\n${userName} (${userEmail}) a envoyé sa preuve Arsene76 et attend votre approbation.${siteUrl ? `\n<${siteUrl}/admin>` : ""}`;
     const headers = {
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
+    };
+    // Embed aux couleurs de Recoursy, avec le logo du site
+    const embed = {
+      title: "Nouvelle demande d'accès",
+      description: `**${userName}** (${userEmail}) a envoyé une capture d'écran de preuve (Arsene76) et attend votre approbation.`,
+      color: 0x4c6ef5,
+      thumbnail: {
+        url: siteUrl ? `${siteUrl}/logo.svg` : undefined,
+      },
+      fields: [
+        {
+          name: "Utilisateur",
+          value: `${userName}\n${userEmail}`,
+          inline: false,
+        },
+        {
+          name: "Statut",
+          value: "⏳ En attente d'examen",
+          inline: true,
+        },
+        {
+          name: "Preuve",
+          value: "Capture d'écran Arsene76",
+          inline: true,
+        },
+      ],
+      ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
+      footer: {
+        text: "Recoursy — votre classe, documentée",
+        ...(siteUrl ? { icon_url: `${siteUrl}/logo.svg` } : {}),
+      },
+      timestamp: new Date().toISOString(),
     };
     for (const discordId of discordIds) {
       try {
@@ -365,19 +396,93 @@ export const sendApprovalDiscordDm = action({
         const channelRes = await axios.post(
           "https://discord.com/api/v10/users/@me/channels",
           { recipient_id: discordId },
-          { headers },
+          { headers, validateStatus: () => true },
         );
         const channelId = channelRes.data?.id as string | undefined;
-        if (!channelId) continue;
-        // 2) Envoie le message dans ce canal
-        await axios.post(
+        if (channelRes.status >= 400 || !channelId) {
+          console.warn(
+            `[Discord] ouverture de MP impossible pour ${discordId} : HTTP ${channelRes.status}`, 
+            JSON.stringify(channelRes.data ?? {}).slice(0, 300),
+          );
+          continue;
+        }
+        // 2) Envoie le message avec embed dans ce canal
+        const msgRes = await axios.post(
           `https://discord.com/api/v10/channels/${channelId}/messages`,
-          { content },
-          { headers },
+          {
+            content: `📌 ${userName} attend votre approbation${siteUrl ? ` — <${siteUrl}/admin>` : ""}`,
+            embeds: [embed],
+          },
+          { headers, validateStatus: () => true },
         );
+        if (msgRes.status >= 400) {
+          console.warn(
+            `[Discord] envoi du message impossible pour ${discordId} : HTTP ${msgRes.status}`,
+            JSON.stringify(msgRes.data ?? {}).slice(0, 300),
+          );
+        }
       } catch (err) {
         console.warn("[Discord] échec MP vers", discordId, err);
       }
+    }
+  },
+});
+
+/** [DEBUG] Test d'envoi MP Discord : bunx convex run app:testDiscord '{"discordId":"..."}' */
+export const testDiscord = action({
+  args: { discordId: v.string() },
+  handler: async (ctx, { discordId }) => {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token) return { ok: false, error: "DISCORD_BOT_TOKEN manquant" };
+    const headers = {
+      Authorization: `Bot ${token}`,
+      "Content-Type": "application/json",
+    };
+    try {
+      // Vérifie que le token est valide
+      const me = await axios.get("https://discord.com/api/v10/users/@me", {
+        headers,
+        validateStatus: () => true,
+      });
+      if (me.status >= 400) {
+        return { ok: false, error: `Token invalide : HTTP ${me.status}` };
+      }
+      const ch = await axios.post(
+        "https://discord.com/api/v10/users/@me/channels",
+        { recipient_id: discordId },
+        { headers, validateStatus: () => true },
+      );
+      if (ch.status >= 400 || !ch.data?.id) {
+        return {
+          ok: false,
+          error: `Ouverture de MP impossible : HTTP ${ch.status}`, 
+          detail: ch.data,
+        };
+      }
+      const msg = await axios.post(
+        `https://discord.com/api/v10/channels/${ch.data.id}/messages`,
+        {
+          content: "Test Recoursy ✓",
+          embeds: [
+            {
+              title: "Notifications Recoursy activées",
+              description:
+                "Vous recevrez ici les nouvelles demandes d'accès à approuver.",
+              color: 0x4c6ef5,
+              footer: { text: "Recoursy — votre classe, documentée" },
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        },
+        { headers, validateStatus: () => true },
+      );
+      return {
+        ok: msg.status < 400,
+        status: msg.status,
+        detail: msg.status >= 400 ? msg.data : "MP envoyé ✓",
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
 });
