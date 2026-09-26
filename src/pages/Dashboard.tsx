@@ -135,12 +135,10 @@ function ApprovalGate({
   const generateUploadUrl = useMutation(api.app.generateUploadUrl);
   const submitRequest = useMutation(api.app.submitAccessRequest);
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
   const pickFile = (f: File | null) => {
     setFile(f);
-    setPreview(f ? URL.createObjectURL(f) : null);
   };
 
   const handleSubmit = async () => {
@@ -195,13 +193,6 @@ function ApprovalGate({
                   vérifier.
                 </p>
               </div>
-              {preview && (
-                <img
-                  src={preview}
-                  alt="Preuve envoyée"
-                  className="mx-auto max-h-48 rounded-xl border border-border"
-                />
-              )}
             </div>
           ) : request?.status === "rejected" ? (
             <div className="space-y-4 text-center">
@@ -220,7 +211,6 @@ function ApprovalGate({
                 </p>
               </div>
               <ProofForm
-                preview={preview}
                 onPick={pickFile}
                 onSubmit={handleSubmit}
                 sending={sending}
@@ -229,7 +219,6 @@ function ApprovalGate({
             </div>
           ) : (
             <ProofForm
-              preview={preview}
               onPick={pickFile}
               onSubmit={handleSubmit}
               sending={sending}
@@ -243,13 +232,11 @@ function ApprovalGate({
 }
 
 function ProofForm({
-  preview,
   onPick,
   onSubmit,
   sending,
   hasFile,
 }: {
-  preview: string | null;
   onPick: (f: File | null) => void;
   onSubmit: () => void;
   sending: boolean;
@@ -276,13 +263,6 @@ function ProofForm({
           onChange={(e) => onPick(e.target.files?.[0] ?? null)}
         />
       </label>
-      {preview && (
-        <img
-          src={preview}
-          alt="Aperçu de la capture"
-          className="mx-auto max-h-48 rounded-xl border border-border"
-        />
-      )}
       <Button
         className="w-full"
         disabled={!hasFile || sending}
