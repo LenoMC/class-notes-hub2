@@ -1399,6 +1399,40 @@ export const deleteUser = mutation({
 
 // ---------- Bootstrap : le premier inscrit devient admin global ----------
 
+/** [OUTIL DEV] Purge complète de la base : toutes les tables + stockage.
+    S'exécute via : bunx convex run app:wipeAllDatabase
+    (aucune vérif d'auth : usage ponctuel de maintenance uniquement) */
+export const wipeAllDatabase = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const tables = [
+      "chatMessages",
+      "accessRequests",
+      "courseFiles",
+      "timetableSlots",
+      "holidays",
+      "weekAnchor",
+      "classes",
+      "users",
+    ] as const;
+    const counts: Record<string, number> = {};
+    for (const t of tables) {
+      const rows = await ctx.db.query(t).collect();
+      for (const r of rows) {
+        await ctx.db.delete(r._id);
+      }
+      counts[t] = rows.length;
+    }
+    // Fichiers du stockage (captures de preuve, fiches uploadées)
+    const storageDocs = await ctx.db.system.query("_storage").collect();
+    for (const s of storageDocs) {
+      await ctx.storage.delete(s._id);
+    }
+    counts._storage = storageDocs.length;
+    return counts;
+  },
+});
+
 export const claimAdminIfFirst = mutation({
   args: {},
   handler: async (ctx) => {
