@@ -257,7 +257,8 @@ export const sendApprovalEmails = action({
 
 /** Envoi d'un SMS à chaque admin qui a enregistré un numéro (textbee).
     Gratuit : 300 SMS/mois via votre propre téléphone Android + SIM.
-    Nécessite TEXTBEE_API_KEY et TEXTBEE_DEVICE_ID (textbee.dev). */
+    Nécessite TEXTBEE_API_KEY et TEXTBEE_DEVICE_ID ou TEXTBEE_PHONE_ID
+    (textbee.dev). */
 export const sendApprovalSms = action({
   args: {
     phones: v.array(v.string()),
@@ -266,16 +267,19 @@ export const sendApprovalSms = action({
   },
   handler: async (ctx, { phones, userName, userEmail }) => {
     const apiKey = process.env.TEXTBEE_API_KEY;
-    const deviceId = process.env.TEXTBEE_DEVICE_ID;
+    const deviceId =
+      process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
     if (!apiKey || !deviceId || phones.length === 0) {
-      console.warn("[SMS] textbee non configuré — SMS ignorés.");
+      console.warn(
+        `[SMS] textbee non configuré (apiKey=${!!apiKey}, deviceId=${deviceId ? "présent" : "absent"}) — SMS ignorés.`,
+      );
       return;
     }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
     const text = `Recoursy : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
     for (const phone of phones) {
       try {
-        await axios.post(
+        const res = await axios.post(
           `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
           {
             recipients: [phone],
@@ -286,11 +290,51 @@ export const sendApprovalSms = action({
               "x-api-key": apiKey,
               "Content-Type": "application/json",
             },
+            validateStatus: () => true,
           },
         );
+        if (res.status >= 400) {
+          console.warn(
+            `[SMS] textbee a refusé l'envoi vers ${phone} : HTTP ${res.status}`, 
+            typeof res.data === "object" ? JSON.stringify(res.data).slice(0, 300) : res.data,
+          );
+        }
       } catch (err) {
         console.warn("[SMS] échec vers", phone, err);
       }
+    }
+  },
+});
+
+/** [DEBUG] Test d'envoi SMS direct : bunx convex run app:testSms '{"phone":"+336..."}' */
+export const testSms = action({
+  args: { phone: v.string() },
+  handler: async (ctx, { phone }) => {
+    const apiKey = process.env.TEXTBEE_API_KEY;
+    const deviceId =
+      process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
+    if (!apiKey || !deviceId) {
+      return { ok: false, error: "TEXTBEE_API_KEY ou device ID manquant" };
+    }
+    try {
+      const res = await axios.post(
+        `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
+        { recipients: [phone], message: "Test Recoursy ✓" },
+        {
+          headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+          validateStatus: () => true,
+        },
+      );
+      return {
+        ok: res.status < 400,
+        status: res.status,
+        response: typeof res.data === "object" ? res.data : String(res.data),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   },
 });
