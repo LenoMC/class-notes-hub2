@@ -26,9 +26,12 @@ import {
   GraduationCap,
   Hourglass,
   Shield,
+  ShieldCheck,
   Sparkles,
+  Upload,
   UserCog,
   Users2,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -58,7 +61,12 @@ export default function Dashboard() {
   const classFiles = useQuery(api.app.listClassFiles, user?.classId ? {} : "skip");
   const weekState = useQuery(api.app.weekState) as WeekState | undefined;
   const claimAdmin = useMutation(api.app.claimAdminIfFirst);
+  const accessRequest = useQuery(api.app.myAccessRequest) as
+    | AccessRequest
+    | null
+    | undefined;
   const todayName = DAYS_FR[new Date().getDay()];
+  const isAdmin = !!user?.isAdmin;
 
   // Bootstrap : le tout premier utilisateur inscrit devient administrateur global.
   useEffect(() => {
@@ -74,9 +82,20 @@ export default function Dashboard() {
     );
   }
 
+  // Étape d'approbation : avant le questionnaire, sauf pour les admins globaux
+  // et les comptes déjà approuvés.
+  const needsApprovalGate =
+    !!user &&
+    !isAdmin &&
+    !user.questionnaireDone &&
+    accessRequest !== undefined &&
+    accessRequest?.status !== "approved";
+
   return (
     <AppShell isAdmin={user?.isAdmin}>
-      {user && !user.questionnaireDone ? (
+      {needsApprovalGate ? (
+        <ApprovalGate user={user!} request={accessRequest ?? null} />
+      ) : user && !user.questionnaireDone ? (
         <Questionnaire user={user} />
       ) : (
         user && (
@@ -92,6 +111,186 @@ export default function Dashboard() {
         )
       )}
     </AppShell>
+  );
+}
+
+// ---------- Étape d'approbation d'accès (preuve Arsene76) ----------
+
+type AccessRequest = {
+  _id: string;
+  status: "pending" | "approved" | "rejected";
+  storageId: string;
+  reviewNote: string | null;
+  createdAt: number;
+  reviewedAt: number | null;
+};
+
+function ApprovalGate({
+  user,
+  request,
+}: {
+  user: Me;
+  request: AccessRequest | null;
+}) {
+  const generateUploadUrl = useMutation(api.app.generateUploadUrl);
+  const submitRequest = useMutation(api.app.submitAccessRequest);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+
+  const pickFile = (f: File | null) => {
+    setFile(f);
+    setPreview(f ? URL.createObjectURL(f) : null);
+  };
+
+  const handleSubmit = async () => {
+    if (!file || sending) return;
+    setSending(true);
+    try {
+      const url = await generateUploadUrl();
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const { storageId } = await res.json();
+      await submitRequest({ storageId });
+      toast.success(
+        "Demande envoyée ! Les administrateurs ont été notifiés par email.",
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Envoi impossible. Réessayez.",
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <Card className="panel border-border/70">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary glow-ring-soft">
+            <ShieldCheck className="size-6" />
+          </div>
+          <CardTitle className="text-xl">Vérification d'identité</CardTitle>
+          <CardDescription>
+            Pour accéder à CoursFlow, envoyez une capture d'écran de votre profil
+            sur <strong>Arsene76</strong> (le site du collège) pour prouver que
+            c'est bien vous.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {request?.status === "pending" ? (
+            <div className="space-y-4 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-400/15">
+                <Hourglass className="size-6 text-amber-300" />
+              </div>
+              <div>
+                <p className="font-semibold">Demande en cours d'examen</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Les administrateurs globaux ont été notifiés par email. Vous
+                  recevrez l'accès dès validation — rechargez la page pour
+                  vérifier.
+                </p>
+              </div>
+              {preview && (
+                <img
+                  src={preview}
+                  alt="Preuve envoyée"
+                  className="mx-auto max-h-48 rounded-xl border border-border"
+                />
+              )}
+            </div>
+          ) : request?.status === "rejected" ? (
+            <div className="space-y-4 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-destructive/15">
+                <XCircle className="size-6 text-destructive" />
+              </div>
+              <div>
+                <p className="font-semibold">Demande refusée</p>
+                {request.reviewNote && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Motif : {request.reviewNote}
+                  </p>
+                )}
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Vous pouvez soumettre une nouvelle capture d'écran.
+                </p>
+              </div>
+              <ProofForm
+                preview={preview}
+                onPick={pickFile}
+                onSubmit={handleSubmit}
+                sending={sending}
+                hasFile={!!file}
+              />
+            </div>
+          ) : (
+            <ProofForm
+              preview={preview}
+              onPick={pickFile}
+              onSubmit={handleSubmit}
+              sending={sending}
+              hasFile={!!file}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProofForm({
+  preview,
+  onPick,
+  onSubmit,
+  sending,
+  hasFile,
+}: {
+  preview: string | null;
+  onPick: (f: File | null) => void;
+  onSubmit: () => void;
+  sending: boolean;
+  hasFile: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <label
+        htmlFor="proof-upload"
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-secondary/40 px-6 py-8 text-center transition-colors hover:border-primary/60"
+      >
+        <Upload className="size-7 text-primary" />
+        <span className="text-sm font-medium">
+          Cliquez pour choisir votre capture d'écran
+        </span>
+        <span className="text-xs text-muted-foreground">
+          PNG, JPG ou WebP — montrant votre profil Arsene76
+        </span>
+        <input
+          id="proof-upload"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => onPick(e.target.files?.[0] ?? null)}
+        />
+      </label>
+      {preview && (
+        <img
+          src={preview}
+          alt="Aperçu de la capture"
+          className="mx-auto max-h-48 rounded-xl border border-border"
+        />
+      )}
+      <Button
+        className="w-full"
+        disabled={!hasFile || sending}
+        onClick={onSubmit}
+      >
+        {sending ? "Envoi en cours…" : "Envoyer ma demande"}
+      </Button>
+    </div>
   );
 }
 

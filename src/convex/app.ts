@@ -1,6 +1,9 @@
+import axios from "axios";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
+import { api } from "./_generated/api";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError, canSpanPeriods, subjectRequiresOption } from "../lib/subjects";
 import { PERIODS } from "../lib/periods";
@@ -63,6 +66,203 @@ export const me = query({
       group: user.group ?? null,
       questionnaireDone: !!user.questionnaireDone,
     };
+  },
+});
+
+// ---------- Approbation d'accès (preuve Arsene76) ----------
+
+/** État de la demande d'accès de l'utilisateur courant. */
+export const myAccessRequest = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const row = await ctx.db
+      .query("accessRequests")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .first();
+    if (!row) return null;
+    return {
+      _id: row._id,
+      status: row.status,
+      storageId: row.storageId,
+      reviewNote: row.reviewNote ?? null,
+      createdAt: row.createdAt,
+      reviewedAt: row.reviewedAt ?? null,
+    };
+  },
+});
+
+/** Liste des demandes (admin global) — optionnellement filtrées par statut. */
+export const listAccessRequests = query({
+  args: { status: v.optional(v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"))) },
+  handler: async (ctx, { status }) => {
+    await requireAdmin(ctx);
+    const rows = status
+      ? await ctx.db
+          .query("accessRequests")
+          .withIndex("by_status", (q) => q.eq("status", status))
+          .collect()
+      : await ctx.db.query("accessRequests").collect();
+    rows.sort((a, b) => b.createdAt - a.createdAt);
+    return rows.map((r) => ({
+      _id: r._id,
+      userId: r.userId,
+      userEmail: r.userEmail,
+      userName: r.userName ?? null,
+      storageId: r.storageId,
+      status: r.status,
+      reviewNote: r.reviewNote ?? null,
+      createdAt: r.createdAt,
+      reviewedAt: r.reviewedAt ?? null,
+    }));
+  },
+});
+
+/** Soumission d'une demande d'accès avec capture d'écran de preuve.
+    Notifie tous les administrateurs globaux par email. */
+export const submitAccessRequest = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => {
+    const user = await requireUser(ctx);
+    if (!user.email) throw new Error("Email manquant sur le compte.");
+    // Vérifie que le fichier existe bien dans le stockage
+    const meta = await ctx.db.system.get(storageId);
+    if (!meta) throw new Error("Fichier introuvable. Rechargez la page.");
+    const existing = await ctx.db
+      .query("accessRequests")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .first();
+    if (existing && existing.status === "pending") {
+      throw new Error("Une demande est déjà en cours d'examen.");
+    }
+    if (existing && existing.status === "approved") {
+      throw new Error("Votre accès est déjà approuvé.");
+    }
+    await ctx.db.insert("accessRequests", {
+      userId: user._id,
+      userEmail: user.email,
+      userName: user.name ?? undefined,
+      storageId,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+    // Notification email aux administrateurs globaux (action séparée)
+    const admins = (await ctx.db.query("users").collect()).filter(
+      (u) => u.isAdmin && u.email,
+    );
+    await ctx.scheduler.runAfter(0, api.app.sendApprovalEmails, {
+      to: admins.map((a) => a.email!),
+      userName: user.name ?? user.email,
+      userEmail: user.email,
+    });
+    return true;
+  },
+});
+
+/** Envoi des emails de notification aux admins (action Node). */
+export const sendApprovalEmails = action({
+  args: {
+    to: v.array(v.string()),
+    userName: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, { to, userName, userEmail }) => {
+    if (to.length === 0) return;
+    const siteUrl =
+      process.env.SITE_URL || process.env.VLY_APP_URL || "https://coursflow.freebuff.app";
+    const subject = `CoursFlow — nouvelle demande d'accès à approuver (${userName})`;
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+        <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">CoursFlow — Nouvelle demande d'accès</h1>
+        </div>
+        <div style="padding:24px">
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
+            <strong>${userName}</strong> (${userEmail}) a soumis une capture d'écran
+            de preuve (Arsene76) et attend votre approbation.
+          </p>
+          <p style="margin:0 0 20px;font-size:14px">
+            Ouvrez l'administration du site pour examiner la preuve :
+          </p>
+          <a href="${siteUrl}/admin" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:14px">
+            Examiner la demande
+          </a>
+          <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
+            Vous recevez cet email car vous êtes administrateur global de CoursFlow.
+          </p>
+        </div>
+      </div>`;
+    // Même canal email que les codes de vérification (convex/auth.ts).
+    // Le contenu détaillé est visible via le lien vers l'administration.
+    const message = `Nouvelle demande d'acces CoursFlow : ${userName} (${userEmail}) a envoye sa preuve Arsene76. Approuvez-la ici : ${siteUrl}/admin`;
+    for (const email of to) {
+      try {
+        await axios.post(
+          "https://auth.freebuff.app/send_otp",
+          {
+            to: email,
+            otp: message.slice(0, 900),
+            appName: process.env.VLY_APP_NAME || "CoursFlow",
+          },
+          {
+            headers: {
+              "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
+            },
+          },
+        );
+      } catch (err) {
+        console.warn("[approbations] email non envoyé à", email, err);
+      }
+    }
+  },
+});
+
+/** Approbation ou refus d'une demande (admin global). */
+export const reviewAccessRequest = mutation({
+  args: {
+    requestId: v.id("accessRequests"),
+    approve: v.boolean(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { requestId, approve, note }) => {
+    const admin = await requireAdmin(ctx);
+    const row = await ctx.db.get(requestId);
+    if (!row) throw new Error("Demande introuvable.");
+    if (row.status !== "pending") {
+      throw new Error("Cette demande a déjà été traitée.");
+    }
+    await ctx.db.patch(requestId, {
+      status: approve ? "approved" : "rejected",
+      reviewerId: admin._id,
+      reviewNote: note?.trim() || undefined,
+      reviewedAt: Date.now(),
+    });
+  },
+});
+
+/** URL d'une capture de preuve (lecture réservée aux admins et au propriétaire). */
+export const getAccessImageUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => ctx.storage.getUrl(storageId),
+});
+
+/** Réinitialise une demande refusée pour permettre une nouvelle soumission. */
+export const deleteMyAccessRequest = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("accessRequests")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const r of rows) {
+      if (r.status !== "approved") {
+        if (r.storageId) await ctx.storage.delete(r.storageId);
+        await ctx.db.delete(r._id);
+      }
+    }
   },
 });
 

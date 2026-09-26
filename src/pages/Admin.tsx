@@ -39,14 +39,18 @@ import {
   CalendarPlus,
   Check,
   CheckCircle2,
+  Clock,
+  ExternalLink,
   Pencil,
   Plus,
   RefreshCw,
   Shield,
+  ShieldCheck,
   Trash2,
   UserCog,
   Users,
   X,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -60,6 +64,18 @@ const OPTIONS = [
   "Sécurité Civile",
 ] as const;
 
+type AccessRequestRow = {
+  _id: string;
+  userId: string;
+  userEmail: string;
+  userName: string | null;
+  storageId: string;
+  status: "pending" | "approved" | "rejected";
+  reviewNote: string | null;
+  createdAt: number;
+  reviewedAt: number | null;
+};
+
 type WeekState = {
   week: "A" | "B";
   isHoliday: boolean;
@@ -69,6 +85,11 @@ type WeekState = {
 
 export default function Admin() {
   const { user } = useAuth();
+  const allRequests = useQuery(api.app.listAccessRequests, {}) as
+    | AccessRequestRow[]
+    | undefined;
+  const pendingCount =
+    allRequests?.filter((r) => r.status === "pending").length ?? 0;
 
   if (!user) return null;
   if (!user.isAdmin) {
@@ -96,8 +117,14 @@ export default function Admin() {
         Classes prédéfinies, emplois du temps, comptes utilisateurs et calendrier
         scolaire.
       </p>
-      <Tabs defaultValue="classes" className="space-y-4">
+      <Tabs defaultValue="approvals" className="space-y-4">
         <TabsList className="bg-secondary/60">
+          <TabsTrigger value="approvals" className="gap-1.5">
+            <ShieldCheck className="size-4" /> Approbations
+            {pendingCount > 0 && (
+              <Badge className="ml-1 h-5 px-1.5 text-[10px]">{pendingCount}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="classes" className="gap-1.5">
             <Plus className="size-4" /> Classes
           </TabsTrigger>
@@ -112,6 +139,9 @@ export default function Admin() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="approvals">
+          <ApprovalsTab />
+        </TabsContent>
         <TabsContent value="classes">
           <ClassesTab />
         </TabsContent>
@@ -126,6 +156,199 @@ export default function Admin() {
         </TabsContent>
       </Tabs>
     </AppShell>
+  );
+}
+
+// ---------- Onglet Approbations (preuves Arsene76) ----------
+
+function ApprovalsTab() {
+  const requests = useQuery(api.app.listAccessRequests, {}) as
+    | AccessRequestRow[]
+    | undefined;
+  const review = useMutation(api.app.reviewAccessRequest);
+  const [filter, setFilter] = useState<
+    "pending" | "approved" | "rejected"
+  >("pending");
+
+  const rows = (requests ?? []).filter((r) => r.status === filter);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-secondary/40 p-1 w-fit">
+        {(
+          [
+            { value: "pending", label: "En attente", icon: Clock },
+            { value: "approved", label: "Approuvées", icon: CheckCircle2 },
+            { value: "rejected", label: "Refusées", icon: XCircle },
+          ] as const
+        ).map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setFilter(value)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+              filter === value
+                ? "bg-primary/15 text-primary"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="size-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {!requests ? (
+        <div className="space-y-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : rows.length === 0 ? (
+        <Card className="panel border-border/70">
+          <CardContent className="py-10 text-center">
+            <ShieldCheck className="mx-auto size-10 text-muted-foreground/50" />
+            <p className="mt-3 text-sm text-muted-foreground">
+              Aucune demande {filter === "pending" ? "en attente" : filter === "approved" ? "approuvée" : "refusée"}.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {rows.map((r) => (
+            <ApprovalCard key={r._id} request={r} onReview={review} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApprovalCard({
+  request,
+  onReview,
+}: {
+  request: AccessRequestRow;
+  onReview: (opts: {
+    requestId: Id<"accessRequests">;
+    approve: boolean;
+    note?: string;
+  }) => Promise<unknown>;
+}) {
+  const imageUrl = useQuery(api.app.getAccessImageUrl, {
+    storageId: request.storageId as Id<"_storage">,
+  });
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const [zoom, setZoom] = useState(false);
+
+  const act = async (approve: boolean) => {
+    setBusy(true);
+    try {
+      await onReview({
+        requestId: request._id as Id<"accessRequests">,
+        approve,
+        note: approve ? undefined : note || undefined,
+      });
+      toast.success(approve ? "Accès approuvé." : "Demande refusée.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action impossible");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="panel border-border/70">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="size-4 text-primary" />
+          {request.userName || request.userEmail}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {request.userEmail} · demande du{" "}
+          {new Date(request.createdAt).toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {imageUrl ? (
+          <button
+            type="button"
+            onClick={() => setZoom(true)}
+            className="block w-full cursor-zoom-in"
+          >
+            <img
+              src={imageUrl}
+              alt={`Preuve de ${request.userName || request.userEmail}`}
+              className="mx-auto max-h-56 rounded-xl border border-border object-contain"
+            />
+          </button>
+        ) : (
+          <Skeleton className="h-56 w-full" />
+        )}
+
+        {request.status === "pending" ? (
+          <>
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Motif du refus (optionnel)"
+              className="h-9 bg-secondary"
+            />
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={busy}
+                onClick={() => act(true)}
+              >
+                <Check className="mr-1.5 size-4" /> Approuver
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => act(false)}
+              >
+                <X className="mr-1.5 size-4" /> Refuser
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {request.status === "approved" ? "Approuvée" : "Refusée"}
+            {request.reviewNote ? ` — ${request.reviewNote}` : ""}
+            {request.reviewedAt
+              ? ` le ${new Date(request.reviewedAt).toLocaleDateString("fr-FR")}`
+              : ""}
+          </p>
+        )}
+      </CardContent>
+
+      <Dialog open={zoom} onOpenChange={setZoom}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Preuve — {request.userName || request.userEmail}
+            </DialogTitle>
+            <DialogDescription>
+              Capture d'écran Arsene76 soumise par {request.userEmail}.
+            </DialogDescription>
+          </DialogHeader>
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="Preuve en grand"
+              className="mx-auto max-h-[60vh] rounded-xl border border-border object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 

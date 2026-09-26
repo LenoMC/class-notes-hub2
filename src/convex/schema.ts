@@ -139,6 +139,24 @@ const schema = defineSchema(
     ficheId: v.optional(v.id("courseFiles")), // fiche jointe au message
     createdAt: v.number(),
   }).index("by_class", ["classId"]),
+
+  // Demandes d'accès : capture d'écran de preuve (Arsene76) à approuver
+  // par un administrateur global avant l'accès au questionnaire.
+  accessRequests: defineTable({
+    userId: v.id("users"),
+    userEmail: v.string(),
+    userName: v.optional(v.string()),
+    storageId: v.id("_storage"), // capture d'écran de preuve
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+    ),
+    reviewerId: v.optional(v.id("users")),
+    reviewNote: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_status", ["status"]).index("by_user", ["userId"]),
 },
   {
     schemaValidation: false,
