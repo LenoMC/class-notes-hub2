@@ -250,7 +250,9 @@ export const sendApprovalEmails = action({
   },
 });
 
-/** Envoi d'un SMS à chaque admin qui a enregistré un numéro (Telnyx). */
+/** Envoi d'un SMS à chaque admin qui a enregistré un numéro (textbee).
+    Gratuit : 300 SMS/mois via votre propre téléphone Android + SIM.
+    Nécessite TEXTBEE_API_KEY et TEXTBEE_DEVICE_ID (textbee.dev). */
 export const sendApprovalSms = action({
   args: {
     phones: v.array(v.string()),
@@ -258,10 +260,10 @@ export const sendApprovalSms = action({
     userEmail: v.string(),
   },
   handler: async (ctx, { phones, userName, userEmail }) => {
-    const apiKey = process.env.TELNYX_API_KEY;
-    const from = process.env.TELNYX_PHONE_NUMBER;
-    if (!apiKey || !from || phones.length === 0) {
-      console.warn("[SMS] Telnyx non configuré — SMS ignorés.");
+    const apiKey = process.env.TEXTBEE_API_KEY;
+    const deviceId = process.env.TEXTBEE_DEVICE_ID;
+    if (!apiKey || !deviceId || phones.length === 0) {
+      console.warn("[SMS] textbee non configuré — SMS ignorés.");
       return;
     }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
@@ -269,15 +271,14 @@ export const sendApprovalSms = action({
     for (const phone of phones) {
       try {
         await axios.post(
-          "https://api.telnyx.com/v2/messages",
+          `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
           {
-            from,
-            to: phone,
-            text,
+            recipients: [phone],
+            message: text,
           },
           {
             headers: {
-              Authorization: `Bearer ${apiKey}`,
+              "x-api-key": apiKey,
               "Content-Type": "application/json",
             },
           },

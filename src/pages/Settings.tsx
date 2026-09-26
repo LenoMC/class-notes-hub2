@@ -284,7 +284,7 @@ export default function Settings() {
                   </Label>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Format international, ex. +33612345678. Vous recevrez un SMS
-                    à chaque nouvelle demande d'accès (service Telnyx).
+                    à chaque nouvelle demande d'accès (gratuit via textbee).
                   </p>
                 </div>
                 <Input
