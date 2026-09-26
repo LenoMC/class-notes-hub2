@@ -106,7 +106,7 @@ export default function Fiches() {
   );
 
   return (
-    <AppShell>
+    <AppShell isAdmin={user?.isAdmin}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary glow-ring-soft">

@@ -172,7 +172,7 @@ export default function Chat() {
   const noClass = user && !user.classId && !user.adminOfClassId;
 
   return (
-    <AppShell>
+    <AppShell isAdmin={user?.isAdmin}>
       <div className="mb-6 flex items-center gap-3">
         <div className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary glow-ring-soft">
           <MessagesSquare className="size-6" />
