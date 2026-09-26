@@ -1,4 +1,5 @@
 import axios from "axios";
+import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
@@ -22,7 +23,11 @@ async function requireUser(ctx: any): Promise<UserDoc> {
   const userId = await getAuthUserId(ctx);
   if (userId === null) throw new Error("Non connecté");
   const user = await ctx.db.get(userId);
-  if (!user) throw new Error("Utilisateur introuvable");
+  if (!user) {
+    // Session orpheline (compte supprimé / DB réinitialisée) : erreur claire
+    // que le client intercepte pour déconnecter proprement.
+    throw new ConvexError("SESSION_EXPIREE");
+  }
   return user as UserDoc;
 }
 
@@ -48,7 +53,7 @@ export const me = query({
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
     const user = (await ctx.db.get(userId)) as UserDoc | null;
-    if (!user) return null;
+    if (!user) return null; // session orpheline (compte supprimé) → traité comme déconnecté
     const classroom = user.classId ? await ctx.db.get(user.classId) : null;
     return {
       _id: user._id,
