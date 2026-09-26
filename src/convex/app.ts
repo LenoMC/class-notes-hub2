@@ -53,7 +53,7 @@ export const me = query({
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
     const user = (await ctx.db.get(userId)) as UserDoc | null;
-    if (!user) return null; // session orpheline (compte supprimé) → traité comme déconnecté
+    if (!user) return null; // session orpheline (compte supprimé)
     const classroom = user.classId ? await ctx.db.get(user.classId) : null;
     return {
       _id: user._id,
