@@ -17,16 +17,57 @@ function randomCode(): string {
   return generateRandomString(random, "0123456789", 6);
 }
 
-/** Envoi du code par email via le service email intégré de Freebuff. */
+/** Envoi du code de vérification/réinitialisation via Resend (RESEND_API_KEY).
+    Fallback sur le canal Freebuff si la clé Resend est absente. */
 async function sendCodeEmail(email: string, token: string, kind: "verify" | "reset") {
   const subject =
     kind === "verify"
       ? "Votre code de vérification Recoursy"
       : "Votre code de réinitialisation Recoursy";
-  const body =
+  const title =
     kind === "verify"
-      ? `Bienvenue sur Recoursy. Votre code de vérification : ${token}. Il expire dans 15 minutes.`
-      : `Votre code de réinitialisation de mot de passe : ${token}. Il expire dans 15 minutes.`;
+      ? "Vérification de votre adresse email"
+      : "Réinitialisation de votre mot de passe";
+  const intro =
+    kind === "verify"
+      ? "Bienvenue sur Recoursy ! Saisissez ce code à 6 chiffres sur le site pour activer votre compte."
+      : "Saisissez ce code à 6 chiffres sur le site pour choisir un nouveau mot de passe.";
+
+  const html = `
+    <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+      <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
+        <h1 style="margin:0;font-size:18px;color:#8fa5ff">Recoursy — ${title}</h1>
+      </div>
+      <div style="padding:24px;text-align:center">
+        <p style="margin:0 0 18px;font-size:14px;line-height:1.6">${intro}</p>
+        <div style="display:inline-block;background:#101735;border:1px solid #2c3760;border-radius:12px;padding:14px 28px;font-size:32px;font-weight:bold;letter-spacing:8px;color:#ffffff;font-family:'Courier New',monospace">${token}</div>
+        <p style="margin:18px 0 0;font-size:12px;color:#8b93b8">Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+      </div>
+    </div>`;
+
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    try {
+      await axios.post(
+        "https://api.resend.com/emails",
+        {
+          from: "Recoursy <onboarding@resend.dev>",
+          to: [email],
+          subject,
+          html,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      return;
+    } catch (err) {
+      console.warn("[auth] Resend a échoué, fallback Freebuff :", err);
+    }
+  }
 
   try {
     await axios.post(
