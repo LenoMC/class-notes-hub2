@@ -4,6 +4,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError, canSpanPeriods, subjectRequiresOption } from "../lib/subjects";
@@ -1482,6 +1483,59 @@ async function countAdmins(ctx: any): Promise<number> {
 
 // ---------- Suppression complète d'un utilisateur ----------
 
+/** Purge les données d'authentification d'un utilisateur (sessions, tokens,
+ *  comptes, codes, limites) puis supprime son document utilisateur. */
+async function purgeUserAccount(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  email?: string,
+) {
+  // 1) Sessions, tokens et codes de vérification liés au compte
+  const sessions = await ctx.db
+    .query("authSessions")
+    .withIndex("userId", (q) => q.eq("userId", userId))
+    .collect();
+  for (const session of sessions) {
+    const sessionTokens = await ctx.db
+      .query("authRefreshTokens")
+      .filter((q: any) => q.eq(q.field("sessionId"), session._id))
+      .collect();
+    for (const t of sessionTokens) await ctx.db.delete(t._id);
+    const verifiers = await ctx.db
+      .query("authVerifiers")
+      .filter((q: any) => q.eq(q.field("sessionId"), session._id))
+      .collect();
+    for (const v2 of verifiers) await ctx.db.delete(v2._id);
+    await ctx.db.delete(session._id);
+  }
+
+  // 2) Comptes d'authentification (email/mot de passe) et codes en attente
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
+    .collect();
+  for (const account of accounts) {
+    const codes = await ctx.db
+      .query("authVerificationCodes")
+      .withIndex("accountId", (q) => q.eq("accountId", account._id))
+      .collect();
+    for (const c of codes) await ctx.db.delete(c._id);
+    await ctx.db.delete(account._id);
+  }
+
+  // 3) Limites de tentatives liées à son email
+  for (const mail of [email].filter(Boolean) as string[]) {
+    const limits = await ctx.db
+      .query("authRateLimits")
+      .withIndex("identifier", (q) => q.eq("identifier", mail))
+      .collect();
+    for (const l of limits) await ctx.db.delete(l._id);
+  }
+
+  // 4) Le document utilisateur lui-même
+  await ctx.db.delete(userId);
+}
+
 export const deleteUser = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
@@ -1496,51 +1550,33 @@ export const deleteUser = mutation({
     if (target.isAdmin && (await countAdmins(ctx)) <= 1) {
       throw new Error("Impossible de supprimer le dernier administrateur");
     }
+    await purgeUserAccount(ctx, userId, target.email);
+    return true;
+  },
+});
 
-    // 1) Sessions, tokens et codes de vérification liés au compte
-    const sessions = await ctx.db
-      .query("authSessions")
-      .withIndex("userId", (q) => q.eq("userId", userId))
+/** Un utilisateur supprime lui-même son compte : sessions fermées, demande(s)
+ *  d'accès et captures de preuve effacées, compte supprimé. Les fiches et
+ *  messages publiés pour la classe restent visibles. */
+export const deleteMyAccount = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (user.isAdmin && (await countAdmins(ctx)) <= 1) {
+      throw new Error(
+        "Impossible de supprimer le dernier administrateur. Attribuez d'abord le rôle d'administrateur à un autre membre.",
+      );
+    }
+    // Demandes d'accès : suppression des captures de preuve associées
+    const requests = await ctx.db
+      .query("accessRequests")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
-    for (const session of sessions) {
-      const sessionTokens = await ctx.db
-        .query("authRefreshTokens")
-        .filter((q: any) => q.eq(q.field("sessionId"), session._id))
-        .collect();
-      for (const t of sessionTokens) await ctx.db.delete(t._id);
-      const verifiers = await ctx.db
-        .query("authVerifiers")
-        .filter((q: any) => q.eq(q.field("sessionId"), session._id))
-        .collect();
-      for (const v2 of verifiers) await ctx.db.delete(v2._id);
-      await ctx.db.delete(session._id);
+    for (const r of requests) {
+      if (r.storageId) await ctx.storage.delete(r.storageId);
+      await ctx.db.delete(r._id);
     }
-
-    // 2) Comptes d'authentification (email/mot de passe) et codes en attente
-    const accounts = await ctx.db
-      .query("authAccounts")
-      .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
-      .collect();
-    for (const account of accounts) {
-      const codes = await ctx.db
-        .query("authVerificationCodes")
-        .withIndex("accountId", (q) => q.eq("accountId", account._id))
-        .collect();
-      for (const c of codes) await ctx.db.delete(c._id);
-      await ctx.db.delete(account._id);
-    }
-
-    // 3) Limites de tentatives liées à ses emails
-    for (const email of [target.email].filter(Boolean) as string[]) {
-      const limits = await ctx.db
-        .query("authRateLimits")
-        .withIndex("identifier", (q) => q.eq("identifier", email))
-        .collect();
-      for (const l of limits) await ctx.db.delete(l._id);
-    }
-
-    // 4) Le document utilisateur lui-même
-    await ctx.db.delete(userId);
+    await purgeUserAccount(ctx, user._id, user.email);
     return true;
   },
 });

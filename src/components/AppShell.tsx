@@ -1,23 +1,14 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
   CalendarDays,
   FolderOpen,
   LayoutDashboard,
-  LogOut,
   Menu,
   MessagesSquare,
-  Settings,
   Shield,
   X,
 } from "lucide-react";
@@ -39,14 +30,9 @@ export function AppShell({
   children: ReactNode;
   isAdmin?: boolean;
 }) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/");
-  };
 
   const initials = (user?.name || user?.email || "?")
     .split(/[\s.@]+/)
@@ -143,49 +129,23 @@ export function AppShell({
               </Badge>
             )}
 
-            {/* Profil */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-secondary/60 transition-colors cursor-pointer"
-                >
-                  <Avatar className="size-8 border border-border">
-                    <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
-                      {initials || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden md:inline text-sm font-medium max-w-32 truncate">
-                    {user?.name || "Utilisateur"}
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium truncate">
-                    {user?.name || "Utilisateur"}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-primary">
-                    {roleLabel}
-                  </p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => navigate("/settings")}
-                >
-                  <Settings className="mr-2 size-4" /> Mon compte
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                  onClick={handleSignOut}
-                >
-                  <LogOut className="mr-2 size-4" /> Se déconnecter
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Profil — clic direct sur le nom/avatar : Mon compte */}
+            <button
+              type="button"
+              onClick={() => navigate("/settings")}
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-secondary/60 transition-colors cursor-pointer"
+              aria-label="Mon compte"
+              title={`${roleLabel} — ouvrir Mon compte`}
+            >
+              <Avatar className="size-8 border border-border">
+                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
+                  {initials || "?"}
+                </AvatarFallback>
+              </Avatar>
+              <span className="hidden md:inline text-sm font-medium max-w-32 truncate">
+                {user?.name || "Utilisateur"}
+              </span>
+            </button>
           </div>
 
           {/* Navigation mobile dépliée */}

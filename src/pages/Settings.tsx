@@ -1,3 +1,14 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,17 +31,19 @@ import { useMutation, useQuery } from "convex/react";
 import {
   CheckCircle2,
   KeyRound,
+  LogOut,
   Mail,
   MessageCircle,
   Pencil,
   Phone,
   Save,
   Shield,
+  Trash2,
   UserCog,
   UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 const OPTIONS = [
@@ -42,9 +55,11 @@ const OPTIONS = [
 ] as const;
 
 export default function Settings() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, signOut } = useAuth();
   const updateProfile = useMutation(api.app.updateProfile);
   const updateEmail = useMutation(api.app.updateMyEmail);
+  const deleteMyAccount = useMutation(api.app.deleteMyAccount);
+  const navigate = useNavigate();
 
   const [name, setName] = useState("");
   const [classId, setClassId] = useState<string>("");
@@ -401,6 +416,75 @@ export default function Settings() {
                 <KeyRound className="size-4" /> Changer mon mot de passe
               </Link>
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Zone de compte : déconnexion / suppression définitive */}
+        <Card className="panel border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Trash2 className="size-5 text-destructive" /> Gestion du compte
+            </CardTitle>
+            <CardDescription>
+              Déconnectez cet appareil, ou supprimez définitivement votre compte
+              (sessions fermées, preuve d'accès effacée). Vos fiches et messages
+              déjà publiés dans la classe restent visibles.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={async () => {
+                await signOut();
+                navigate("/");
+              }}
+            >
+              <LogOut className="size-4" /> Se déconnecter
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="gap-1.5">
+                  <Trash2 className="size-4" /> Supprimer définitivement mon compte
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Supprimer définitivement votre compte ?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Cette action est irréversible : votre compte, vos sessions
+                    et votre capture de preuve seront effacés. Vous ne pourrez
+                    plus accéder à Classheure avec cet email sans recréer un
+                    compte (et repasser par l'approbation d'accès).
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annuler</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-white hover:bg-destructive/90"
+                    onClick={async (e) => {
+                      e.preventDefault(); // laisse le dialog ouvert pendant la mutation
+                      try {
+                        await deleteMyAccount({});
+                        toast.success("Votre compte a été supprimé.");
+                        await signOut();
+                        navigate("/");
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error
+                            ? err.message
+                            : "Suppression impossible.",
+                        );
+                      }
+                    }}
+                  >
+                    Oui, supprimer mon compte
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </div>
