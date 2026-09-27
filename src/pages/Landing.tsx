@@ -3,10 +3,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
+import { subjectStyle } from "@/lib/subjects";
 import logo from "@/assets/logo.svg";
 import {
   CalendarDays,
+  CheckCircle2,
+  Download,
   FileCheck2,
+  FileText,
   FolderOpen,
   ShieldCheck,
   Terminal,
@@ -161,21 +165,63 @@ export default function Landing() {
                 ))}
               </ol>
             </div>
-            <div className="rounded-xl border border-border/70 bg-secondary/30 p-5 font-mono text-xs leading-6 overflow-x-auto">
-              <p className="text-muted-foreground">// aperçu d'un créneau</p>
-              <p>
-                <span className="text-primary">cours</span>{" "}
-                <span className="text-foreground">Lundi 08:00–09:00</span>
+            <div className="rounded-xl border border-border/70 bg-secondary/30 p-5">
+              {/* Aperçu réel : créneau d'emploi du temps */}
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Emploi du temps — lundi · semaine A
               </p>
-              <p className="text-muted-foreground">matière: Mathématiques</p>
-              <p className="text-muted-foreground">salle: B204</p>
-              <p className="mt-2">
-                <span className="text-primary">devoirs</span>{" "}
-                <span className="text-foreground">DM n°3 — chapitre 4</span>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 text-center">
+                    <p className="font-mono text-sm font-bold text-primary">08:00</p>
+                    <p className="text-[10px] text-muted-foreground">09:00</p>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold"
+                        style={subjectStyle("Mathématiques")}
+                      >
+                        Mathématiques
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        Salle B204
+                      </Badge>
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Mme Dupont · Lundi 08:00–09:00
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Aperçu réel : fiche de cours rattachée */}
+              <p className="mb-3 mt-5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Devoirs du créneau
               </p>
-              <p className="text-muted-foreground">statut: publié · 1 fichier · pdf</p>
-              <p className="mt-2 text-muted-foreground">$ classheure open "DM n°3"</p>
-              <p className="text-foreground">→ téléchargement prêt</p>
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15">
+                    <FileText className="size-5 text-red-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">DM n°3 — chapitre 4</p>
+                    <p className="text-xs text-muted-foreground">
+                      PDF · publié par Mme Dupont
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="shrink-0 text-[10px] uppercase">
+                    devoir
+                  </Badge>
+                  <Button size="sm" variant="outline" className="shrink-0 gap-1 text-xs pointer-events-none">
+                    <Download className="size-3.5" /> Fichier
+                  </Button>
+                </div>
+                <p className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-300 flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                  Devoir publié — visible par toute la classe
+                </p>
+              </div>
             </div>
           </div>
         </Card>
