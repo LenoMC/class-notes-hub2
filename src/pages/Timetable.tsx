@@ -43,6 +43,7 @@ import {
   dayToUTC,
   formatDayFr,
   mondayOfUTC,
+  todayDayString,
   utcToDay,
 } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
@@ -60,6 +61,7 @@ import {
   MapPin,
   Pencil,
   Plus,
+  Repeat,
   RotateCcw,
   Trash2,
   UserRound,
@@ -71,6 +73,16 @@ import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
+
+type SlotException = {
+  _id: Id<"slotExceptions">;
+  date: string;
+  kind: "cancelled" | "replaced";
+  reason: string | null;
+  replacementSubject: string | null;
+  replacementTeacher: string | null;
+  replacementRoom: string | null;
+};
 
 type Slot = {
   _id: Id<"timetableSlots">;
@@ -85,7 +97,17 @@ type Slot = {
   color?: string;
   cancelled?: boolean;
   cancellationReason?: string;
+  // Exceptions ponctuelles (une par date) renvoyées par le backend
+  exceptions?: SlotException[];
+  // Transitoire : ce cours affiché est un remplacement valable ce jour uniquement
+  replacedToday?: boolean;
 };
+
+/** L'exception ponctuelle qui s'applique à ce créneau à la date donnée. */
+function exceptionForDate(slot: Slot, date: string | null): SlotException | null {
+  if (!date || !slot.exceptions?.length) return null;
+  return slot.exceptions.find((e) => e.date === date) ?? null;
+}
 
 type WeekState = {
   week: "A" | "B";
@@ -206,25 +228,30 @@ export default function Timetable() {
 
   // Type (A ou B) de la semaine explorée, calculé côté client à partir de
   // l'ancre et des vacances — weekOffset 0 = semaine actuelle (backend).
-  const exploreWeek: "A" | "B" | null = useMemo(() => {
-    if (weekOffset === 0 || !calendar) return null;
+  const exploreMonday: string | null = useMemo(() => {
+    if (weekOffset === 0) return null;
     const n = new Date();
     const localMonday = new Date(n);
     localMonday.setDate(n.getDate() - ((n.getDay() + 6) % 7) + weekOffset * 7);
-    const monday = utcToDay(
+    return utcToDay(
       mondayOfUTC(
         dayToUTC(
           `${localMonday.getFullYear()}-${String(localMonday.getMonth() + 1).padStart(2, "0")}-${String(localMonday.getDate()).padStart(2, "0")}`,
         ),
       ),
     );
+  }, [weekOffset]);
+
+  const exploreWeek: "A" | "B" | null = useMemo(() => {
+    if (!exploreMonday || !calendar) return null;
+    const monday = exploreMonday;
     // Semaine bloquée par des vacances ? -> pas d'alternance, grille vide.
     const mondayInHoliday = calendar.holidays.some(
       (h) => monday >= h.startDay && monday <= h.endDay,
     );
     if (mondayInHoliday) return null;
     return computeWeekState(monday, calendar.anchor, calendar.holidays).week;
-  }, [weekOffset, calendar]);
+  }, [exploreMonday, calendar]);
 
   // Lettre de la semaine à afficher : actuelle (backend) ou explorée (client).
   const displayWeek: "A" | "B" | undefined =
@@ -238,8 +265,12 @@ export default function Timetable() {
     user?.classId && displayWeek ? { week: displayWeek } : "skip",
   ) ?? [];
   const [selected, setSelected] = useState<Slot | null>(null);
+  // Date (YYYY-MM-DD) du jour où le cours a été cliqué — sert à l'exception
+  // ponctuelle (annulation / remplacement de cette date uniquement).
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const openSlot = (slot: Slot) => {
+  const openSlot = (slot: Slot, date?: string) => {
+    setSelectedDate(date ?? null);
     if (weekOffset !== 0) {
       // Exploration d'une semaine passée/future : ouverture simple, sans URL.
       setSelected(slot);
@@ -294,6 +325,7 @@ export default function Timetable() {
           weekOffset={weekOffset}
           onWeekOffset={setWeekOffset}
           exploreWeek={exploreWeek}
+          exploreMonday={exploreMonday}
         />
       )}
 
@@ -302,6 +334,7 @@ export default function Timetable() {
           slot={selected}
           canEdit={user.isAdmin || user.isClassAdmin}
           isAdmin={user.isAdmin}
+          date={selectedDate}
           onClose={closeSlot}
         />
       )}
@@ -337,9 +370,10 @@ function TimetableGrid({
   weekOffset,
   onWeekOffset,
   exploreWeek,
+  exploreMonday,
 }: {
   slots: Slot[];
-  onOpen: (slot: Slot) => void;
+  onOpen: (slot: Slot, date?: string) => void;
   onEdit: (slot: Slot) => void;
   isClassAdmin: boolean;
   isAdmin: boolean;
@@ -348,6 +382,7 @@ function TimetableGrid({
   weekOffset: number;
   onWeekOffset: (offset: number) => void;
   exploreWeek: "A" | "B" | null;
+  exploreMonday: string | null;
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
@@ -367,6 +402,19 @@ function TimetableGrid({
   const colW = isMobile ? M_WIDTH : COL_WIDTH;
   const visibleDays: string[] = isMobile ? [DAYS[dayIdx]] : [...DAYS];
   const todayShown = isMobile ? dayIdx === todayIdx : true;
+
+  // Date (YYYY-MM-DD) de chaque jour affiché pour la semaine vue — sert à
+  // appliquer les exceptions ponctuelles (annulation / remplacement du jour).
+  const shownMonday: number = (() => {
+    if (weekOffset === 0) return mondayOfUTC(dayToUTC(todayDayString()));
+    if (exploreMonday) return dayToUTC(exploreMonday);
+    return mondayOfUTC(dayToUTC(todayDayString())) + weekOffset * 7 * 86400000;
+  })();
+  const dateForDay = (day: string): string => {
+    const di = DAYS.indexOf(day as (typeof DAYS)[number]);
+    if (di < 0) return "";
+    return utcToDay(shownMonday + di * 86400000);
+  };
   // Horloge vivante : re-rendu chaque 30 s pour déplacer la ligne « maintenant ».
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -389,6 +437,25 @@ function TimetableGrid({
       const { startIdx } = slotPlacement(s);
       const key = `${isMobile ? 0 : di}|${startIdx}`;
       const arr = map.get(key) ?? [];
+      // Exception ponctuelle pour la date affichée : le cours devient le
+      // remplacement (ou annulé). Le cours d'origine disparaît de la case.
+      const date = dateForDay(s.day);
+      const exc = exceptionForDate(s, date);
+      if (exc) {
+        if (exc.kind === "replaced") {
+          arr.push({
+            ...s,
+            subject: exc.replacementSubject ?? s.subject,
+            teacher: exc.replacementTeacher ?? undefined,
+            room: exc.replacementRoom ?? undefined,
+            cancelled: false,
+            cancellationReason: undefined,
+            replacedToday: true,
+          });
+        }
+        // kind === "cancelled" : le cours d'origine ne s'affiche pas
+        continue;
+      }
       arr.push(s);
       map.set(key, arr);
     }
@@ -735,7 +802,7 @@ function TimetableGrid({
                             key={slot._id}
                             slot={slot}
                             canEdit={canEdit}
-                            onOpen={onOpen}
+                            onOpen={(s) => onOpen(s, dateForDay(s.day))}
                             onEdit={onEdit}
                           />
                         ))}
@@ -920,7 +987,7 @@ function CourseBox({
 }: {
   slot: Slot;
   canEdit: boolean;
-  onOpen: (slot: Slot) => void;
+  onOpen: (slot: Slot, date?: string) => void;
   onEdit: (slot: Slot) => void;
 }) {
   const eps = isEpsSubject(slot.subject);
@@ -960,6 +1027,11 @@ function CourseBox({
           <MapPin className="size-2.5 shrink-0" />
           {slot.room}
         </p>
+      )}
+      {slot.replacedToday && (
+        <span className="absolute top-1 right-1.5 text-[8px] font-mono font-bold opacity-90">
+          REMPL.
+        </span>
       )}
       {slot.weekType !== "AB" && (
         <span className="absolute bottom-1 right-1.5 text-[8px] font-mono opacity-70">
@@ -1012,20 +1084,26 @@ function SlotDialog({
   slot,
   canEdit,
   isAdmin,
+  date,
   onClose,
 }: {
   slot: Slot;
   canEdit: boolean;
   isAdmin: boolean;
+  date: string | null; // date du jour cliqué (YYYY-MM-DD), pour l'exception ponctuelle
   onClose: () => void;
 }) {
   const files = useQuery(api.app.listFilesForSlot, { slotId: slot._id });
   const setCancelled = useMutation(api.app.setSlotCancelled);
+  const setException = useMutation(api.app.setSlotException);
+  const deleteException = useMutation(api.app.deleteSlotException);
   const [showUpload, setShowUpload] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
   const eps = isEpsSubject(slot.subject);
+  // Exception ponctuelle déjà posée pour cette date précise
+  const punctual = exceptionForDate(slot, date);
 
   const handleCancelToggle = async () => {
     setWorking(true);
@@ -1090,6 +1168,62 @@ function SlotDialog({
           </div>
         )}
 
+        {punctual && (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2.5 text-sm flex items-start gap-2",
+              punctual.kind === "cancelled"
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : "border-amber-400/40 bg-amber-400/10 text-amber-200",
+            )}
+          >
+            <Repeat className="size-4 mt-0.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              {punctual.kind === "cancelled" ? (
+                <>
+                  <p className="font-medium">
+                    Exception ponctuelle : annulé le {formatDayFr(date)}
+                  </p>
+                  {punctual.reason && <p className="text-xs opacity-90">Motif : {punctual.reason}</p>}
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">
+                    Exception ponctuelle : remplacé le {formatDayFr(date)}
+                  </p>
+                  <p className="text-xs opacity-90">
+                    {punctual.replacementSubject}
+                    {punctual.replacementTeacher ? ` · ${punctual.replacementTeacher}` : ""}
+                    {punctual.replacementRoom ? ` · salle ${punctual.replacementRoom}` : ""}
+                  </p>
+                </>
+              )}
+            </div>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!date) return;
+                  setWorking(true);
+                  try {
+                    await deleteException({ exceptionId: punctual._id });
+                    toast.success("Exception retirée — le cours récurrent est rétabli.");
+                  } catch {
+                    toast.error("Suppression impossible.");
+                  } finally {
+                    setWorking(false);
+                  }
+                }}
+                disabled={working}
+                className="shrink-0 opacity-70 hover:opacity-100 cursor-pointer disabled:opacity-40"
+                aria-label="Retirer l'exception"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+        )}
+
         {!eps && (
           <>
             {slot.cancelled && slot.cancellationReason && (
@@ -1123,6 +1257,22 @@ function SlotDialog({
               <UploadForm slotId={slot._id} onDone={() => setShowUpload(false)} />
             )}
           </>
+        )}
+
+        {canEdit && date && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+            <div>
+              <p className="flex items-center gap-1.5 text-xs font-medium">
+                <Repeat className="size-3.5 text-primary" />
+                Cette date uniquement — {formatDayFr(date)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Annulez ce cours ou faites-le reprendre par un autre prof pour ce
+                jour précis, sans changer le reste de l'emploi du temps.
+              </p>
+            </div>
+            <ExceptionForm slot={slot} date={date} onDone={onClose} />
+          </div>
         )}
 
         {canEdit && (
@@ -2007,6 +2157,176 @@ function MemberRow({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------- Exception ponctuelle : annuler / remplacer pour une date ----------
+
+function ExceptionForm({
+  slot,
+  date,
+  onDone,
+}: {
+  slot: Slot;
+  date: string;
+  onDone: () => void;
+}) {
+  const setException = useMutation(api.app.setSlotException);
+  const [kind, setKind] = useState<"cancelled" | "replaced" | null>(null);
+  const [reason, setReason] = useState("");
+  const [rSubject, setRSubject] = useState("");
+  const [rTeacher, setRTeacher] = useState("");
+  const [rRoom, setRRoom] = useState("");
+  const [working, setWorking] = useState(false);
+
+  const subjects = COMMON_SUBJECTS;
+
+  const handleCancel = async () => {
+    setWorking(true);
+    try {
+      await setException({
+        slotId: slot._id,
+        date,
+        kind: "cancelled",
+        reason: reason.trim() || "Professeur absent",
+      });
+      toast.success(
+        `Cours annulé le ${formatDayFr(date)} — le reste de l'EDT est inchangé.`,
+      );
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action impossible.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleReplace = async () => {
+    setWorking(true);
+    try {
+      await setException({
+        slotId: slot._id,
+        date,
+        kind: "replaced",
+        reason: reason.trim() || undefined,
+        replacementSubject: rSubject.trim(),
+        replacementTeacher: rTeacher.trim() || undefined,
+        replacementRoom: rRoom.trim() || undefined,
+      });
+      toast.success(
+        `Cours remplacé le ${formatDayFr(date)} par ${rSubject.trim()}.`,
+      );
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action impossible.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2.5">
+      {!kind ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={working}
+            onClick={() => setKind("cancelled")}
+          >
+            <Ban className="size-3.5 text-destructive" /> Annuler ce jour
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={working}
+            onClick={() => setKind("replaced")}
+          >
+            <Repeat className="size-3.5 text-primary" /> Remplacer ce jour
+          </Button>
+        </div>
+      ) : kind === "cancelled" ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCancel();
+          }}
+          className="space-y-2"
+        >
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Motif (ex. professeur absent)"
+            maxLength={120}
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" variant="destructive" className="flex-1" disabled={working}>
+              {working ? "…" : "Confirmer l'annulation du jour"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setKind(null)}>
+              Retour
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleReplace();
+          }}
+          className="space-y-2"
+        >
+          <select
+            value={rSubject}
+            onChange={(e) => setRSubject(e.target.value)}
+            className="w-full rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            required
+          >
+            <option value="">Matière du cours de remplacement…</option>
+            {subjects.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <Input
+            value={rTeacher}
+            onChange={(e) => setRTeacher(e.target.value)}
+            placeholder="Professeur qui reprend (facultatif)"
+            maxLength={80}
+          />
+          <Input
+            value={rRoom}
+            onChange={(e) => setRRoom(e.target.value)}
+            placeholder="Salle (facultatif)"
+            maxLength={30}
+          />
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Motif (facultatif, ex. prof absent)"
+            maxLength={120}
+          />
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              size="sm"
+              className="flex-1"
+              disabled={working || !rSubject.trim()}
+            >
+              {working ? "…" : "Confirmer le remplacement"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setKind(null)}>
+              Retour
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

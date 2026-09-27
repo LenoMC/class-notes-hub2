@@ -161,10 +161,27 @@ const schema = defineSchema(
       weekType: v.optional(weekTypeValidator), // A, B ou AB (défaut : AB)
       group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau réservé à un groupe
       color: v.optional(v.string()), // couleur de la case (hex), sinon couleur de la matière
-      cancelled: v.optional(v.boolean()), // cours annulé par un admin
+      cancelled: v.optional(v.boolean()), // cours annulé par un admin (permanent)
       cancellationReason: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_class", ["classId"]),
+
+    // Exceptions ponctuelles : annulation ou remplacement pour UNE date
+    // précise (le cours récurrent reste inchangé les autres semaines).
+    slotExceptions: defineTable({
+      slotId: v.id("timetableSlots"),
+      date: v.string(), // "YYYY-MM-DD" du jour concerné (une seule fois)
+      kind: v.union(v.literal("cancelled"), v.literal("replaced")),
+      reason: v.optional(v.string()), // motif affiché (ex. "prof absent")
+      // Cours de remplacement (si kind = "replaced") :
+      replacementSubject: v.optional(v.string()),
+      replacementTeacher: v.optional(v.string()),
+      replacementRoom: v.optional(v.string()),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+    })
+      .index("by_slot", ["slotId"])
+      .index("by_date", ["date"]),
 
     // Fichiers de cours / devoirs rattachés à un créneau
     courseFiles: defineTable({

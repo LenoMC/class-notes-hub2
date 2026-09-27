@@ -1126,6 +1126,53 @@ function slotView(slot: Doc<"timetableSlots">) {
   };
 }
 
+/** Types de retour des créneaux : vue standard enrichie des exceptions
+ *  ponctuelles (par date). `dates` contient les dates où le créneau est
+ *  annulé ou remplacé. */
+type SlotViewWithExceptions = ReturnType<typeof slotView> & {
+  exceptions: Array<{
+    _id: Id<"slotExceptions">;
+    date: string;
+    kind: "cancelled" | "replaced";
+    reason: string | null;
+    replacementSubject: string | null;
+    replacementTeacher: string | null;
+    replacementRoom: string | null;
+  }>;
+};
+
+/** Fusionne les exceptions ponctuelles dans une liste de créneaux.
+    Chaque créneau renvoie la liste de ses exceptions datées ; la grille
+    applique celle du jour affiché. */
+async function mergeSlotExceptions(
+  ctx: { db: any },
+  slots: Doc<"timetableSlots">[],
+): Promise<SlotViewWithExceptions[]> {
+  const ids = slots.map((s) => s._id);
+  const bySlot = new Map<string, SlotViewWithExceptions["exceptions"]>();
+  if (ids.length > 0) {
+    const exceptions = await ctx.db.query("slotExceptions").collect();
+    for (const e of exceptions) {
+      if (!ids.includes(e.slotId)) continue;
+      const list = bySlot.get(e.slotId) ?? [];
+      list.push({
+        _id: e._id,
+        date: e.date,
+        kind: e.kind,
+        reason: e.reason ?? null,
+        replacementSubject: e.replacementSubject ?? null,
+        replacementTeacher: e.replacementTeacher ?? null,
+        replacementRoom: e.replacementRoom ?? null,
+      });
+      bySlot.set(e.slotId, list);
+    }
+  }
+  return slots.map((s) => ({
+    ...slotView(s),
+    exceptions: (bySlot.get(s._id) ?? []).sort((a, b) => a.date.localeCompare(b.date)),
+  }));
+}
+
 export const listSlots = query({
   args: { classId: v.id("classes"), week: v.optional(weekTypeValidator) },
   handler: async (ctx, { classId, week }) => {
@@ -1142,7 +1189,122 @@ export const listSlots = query({
     filtered.sort(
       (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
     );
-    return filtered.map(slotView);
+    return await mergeSlotExceptions(ctx, filtered);
+  },
+});
+
+// ---------- Exceptions ponctuelles : annuler / remplacer pour une date ----------
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function assertAdminOrClassAdmin(user: UserDoc) {
+  if (!user.isAdmin && !user.isClassAdmin) {
+    throw new Error(
+      "Réservé aux administrateurs globaux et aux responsables de classe.",
+    );
+  }
+}
+
+/** Crée (ou remplace) l'exception ponctuelle d'un créneau pour une date :
+    annulation seule, ou remplacement par un autre cours ce jour-là. */
+export const setSlotException = mutation({
+  args: {
+    slotId: v.id("timetableSlots"),
+    date: v.string(),
+    kind: v.union(v.literal("cancelled"), v.literal("replaced")),
+    reason: v.optional(v.string()),
+    replacementSubject: v.optional(v.string()),
+    replacementTeacher: v.optional(v.string()),
+    replacementRoom: v.optional(v.string()),
+  },
+  handler: async (ctx, { slotId, date, kind, reason, ...repl }) => {
+    const user = await requireUser(ctx);
+    assertAdminOrClassAdmin(user);
+    const slot = await ctx.db.get(slotId);
+    if (!slot) throw new Error("Créneau introuvable.");
+    if (user.isClassAdmin && !user.isAdmin && slot.classId !== user.adminOfClassId) {
+      throw new Error("Ce créneau n'appartient pas à votre classe.");
+    }
+    if (!DATE_RE.test(date)) {
+      throw new Error("Date invalide (format attendu : AAAA-MM-JJ).");
+    }
+    const r = (reason ?? "").trim() || undefined;
+    if (kind === "cancelled") {
+      if (!r) throw new Error("Indiquez un motif d'annulation (ex. prof absent).");
+    }
+    if (kind === "replaced") {
+      if (!repl.replacementSubject?.trim()) {
+        throw new Error("Indiquez la matière du cours de remplacement.");
+      }
+    }
+    // Une seule exception par créneau et par date : on écrase l'existante.
+    const existing = await ctx.db
+      .query("slotExceptions")
+      .withIndex("by_slot", (q) => q.eq("slotId", slotId))
+      .collect();
+    const sameDate = existing.find((e) => e.date === date);
+    const patch = {
+      kind,
+      reason: r,
+      replacementSubject:
+        kind === "replaced" ? repl.replacementSubject?.trim() : undefined,
+      replacementTeacher:
+        kind === "replaced" ? repl.replacementTeacher?.trim() || undefined : undefined,
+      replacementRoom:
+        kind === "replaced" ? repl.replacementRoom?.trim() || undefined : undefined,
+      createdBy: user._id,
+      createdAt: Date.now(),
+    };
+    if (sameDate) {
+      await ctx.db.patch(sameDate._id, patch);
+    } else {
+      await ctx.db.insert("slotExceptions", { slotId, date, ...patch });
+    }
+    return true;
+  },
+});
+
+/** Supprime l'exception ponctuelle (le cours récurrent réapparaît). */
+export const deleteSlotException = mutation({
+  args: { exceptionId: v.id("slotExceptions") },
+  handler: async (ctx, { exceptionId }) => {
+    const user = await requireUser(ctx);
+    assertAdminOrClassAdmin(user);
+    const e = await ctx.db.get(exceptionId);
+    if (!e) throw new Error("Exception introuvable.");
+    const slot = await ctx.db.get(e.slotId);
+    if (
+      user.isClassAdmin &&
+      !user.isAdmin &&
+      slot &&
+      slot.classId !== user.adminOfClassId
+    ) {
+      throw new Error("Cette exception n'appartient pas à votre classe.");
+    }
+    await ctx.db.delete(exceptionId);
+    return true;
+  },
+});
+
+/** Liste brute des exceptions (dialog d'édition côté EDT). */
+export const listSlotExceptions = query({
+  args: { slotId: v.id("timetableSlots") },
+  handler: async (ctx, { slotId }) => {
+    const user = await requireUser(ctx);
+    const slot = await ctx.db.get(slotId);
+    if (!slot) return [];
+    if (
+      user.isClassAdmin &&
+      !user.isAdmin &&
+      slot.classId !== user.adminOfClassId
+    ) {
+      return [];
+    }
+    const rows = await ctx.db
+      .query("slotExceptions")
+      .withIndex("by_slot", (q) => q.eq("slotId", slotId))
+      .collect();
+    return rows.sort((a, b) => a.date.localeCompare(b.date));
   },
 });
 
@@ -1317,7 +1479,7 @@ export const listMySlots = query({
     filtered.sort(
       (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
     );
-    return filtered.map(slotView);
+    return await mergeSlotExceptions(ctx, filtered);
   },
 });
 
