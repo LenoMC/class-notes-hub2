@@ -83,6 +83,17 @@ const schema = defineSchema(
       .index("email", ["email"]) // index for the email. do not remove or modify
       .index("by_class", ["classId"]),
 
+    // Codes de réinitialisation de mot de passe envoyés par SMS (comptes téléphone)
+    phoneResetCodes: defineTable({
+      phone: v.string(), // numéro E.164 du compte concerné (+33...)
+      code: v.string(), // code à 6 chiffres envoyé par SMS
+      expiresAt: v.number(),
+      resetToken: v.optional(v.string()), // jeton d'échange après validation du code
+      tokenExpiresAt: v.optional(v.number()),
+    })
+      .index("by_phone", ["phone"])
+      .index("by_token", ["resetToken"]),
+
     // Classes prédéfinies par les administrateurs globaux
     classes: defineTable({
       name: v.string(), // ex: "3ème A"

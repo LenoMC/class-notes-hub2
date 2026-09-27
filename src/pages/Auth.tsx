@@ -15,6 +15,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useAuth } from "@/hooks/use-auth";
+import { api } from "@/convex/_generated/api";
 import logo from "@/assets/logo.svg";
 import {
   ArrowLeft,
@@ -25,10 +26,12 @@ import {
   Loader2,
   Lock,
   Mail,
+  Phone,
   ShieldCheck,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
+import { useMutation, useAction } from "convex/react";
 import { toast } from "sonner";
 
 interface AuthProps {
@@ -41,6 +44,57 @@ function resolveRedirectAfterAuth(returnTo: string | null, fallback = "/dashboar
 }
 
 type Mode = "signIn" | "signUp" | "verify" | "forgot" | "reset";
+type Method = "email" | "phone";
+
+/** Normalise un numéro saisi : 06 12 34 56 78 → +33612345678 */
+function normalizePhoneInput(raw: string): string {
+  const p = raw.replace(/[\s.\-()]/g, "").trim();
+  if (!p) return "";
+  if (p.startsWith("+")) return p;
+  if (p.startsWith("00")) return `+${p.slice(2)}`;
+  if (p.startsWith("0") && p.length === 10) return `+33${p.slice(1)}`;
+  return p;
+}
+
+/** Bascule Email / Téléphone réutilisée dans chaque mode. */
+function MethodSwitch({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Method;
+  onChange: (m: Method) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange("email")}
+        className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed ${
+          value === "email"
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <Mail className="h-4 w-4" /> Email
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange("phone")}
+        className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed ${
+          value === "phone"
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <Phone className="h-4 w-4" /> Téléphone
+      </button>
+    </div>
+  );
+}
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
@@ -51,11 +105,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     redirectAfterAuth,
   );
 
+  const verifyEmailDeliverable = useAction(api.auth.verifyEmailDeliverable);
+  const requestPhonePasswordReset = useAction(api.auth.requestPhonePasswordReset);
+  const verifyPhoneResetCode = useMutation(api.auth.verifyPhoneResetCode);
+  const completePhonePasswordReset = useAction(api.auth.completePhonePasswordReset);
+
   const initialRaw = searchParams.get("mode");
   const initialMode: Mode =
     initialRaw === "signup" ? "signUp" : initialRaw === "forgot" ? "forgot" : "signIn";
   const [mode, setMode] = useState<Mode>(initialMode);
+  const [method, setMethod] = useState<Method>("email");
   const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingPhone, setPendingPhone] = useState("");
+  const [phoneResetToken, setPhoneResetToken] = useState("");
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,20 +141,28 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setOtp("");
   };
 
-  // ---- Connexion par mot de passe ----
+  const switchMethod = (m: Method) => {
+    setMethod(m);
+    setError(null);
+    setOtp("");
+  };
+
+  // ---- Connexion (email ou téléphone) ----
   const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
     const fd = new FormData(event.currentTarget);
-    const email = fd.get("email") as string;
     const password = fd.get("password") as string;
     try {
-      const result = await signIn("password", {
-        flow: "signIn",
-        email,
-        password,
-      });
+      let result;
+      if (method === "email") {
+        const email = ((fd.get("email") as string) || "").trim().toLowerCase();
+        result = await signIn("password", { flow: "signIn", email, password });
+      } else {
+        const phone = normalizePhoneInput((fd.get("phone") as string) || "");
+        result = await signIn("password-tel", { flow: "signIn", phone, password });
+      }
       if (result?.signingIn) {
         toast.success("Connexion réussie.");
         navigate(redirect, { replace: true });
@@ -106,7 +176,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  // ---- Inscription (crée le compte, envoie le code) ----
+  // ---- Inscription (crée le compte ; email vérifié, téléphone direct) ----
   const handleSignUp = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -114,7 +184,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     const fd = new FormData(event.currentTarget);
     const firstName = ((fd.get("firstName") as string) || "").trim();
     const lastName = ((fd.get("lastName") as string) || "").trim();
-    const email = fd.get("email") as string;
     const password = fd.get("password") as string;
     const confirm = fd.get("confirm") as string;
     if (password !== confirm) {
@@ -123,25 +192,57 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       return;
     }
     try {
-      const result = await signIn("password", {
-        flow: "signUp",
-        email,
-        password,
-        ...(firstName || lastName
-          ? { name: [firstName, lastName].filter(Boolean).join(" ") }
-          : {}),
-        ...(firstName ? { firstName } : {}),
-        ...(lastName ? { lastName } : {}),
-      });
-      if (result?.signingIn) {
-        navigate(redirect, { replace: true });
+      const name = [firstName, lastName].filter(Boolean).join(" ");
+      if (method === "email") {
+        const email = ((fd.get("email") as string) || "").trim().toLowerCase();
+        // Vérifie que le domaine de l'adresse existe (faute de frappe ?)
+        const deliverable = await verifyEmailDeliverable({ email });
+        if (!deliverable) {
+          setError(
+            "Cette adresse email semble invalide ou inexistante (le domaine ne reçoit pas d'email). Vérifiez votre saisie.",
+          );
+          setIsLoading(false);
+          return;
+        }
+        const result = await signIn("password", {
+          flow: "signUp",
+          email,
+          password,
+          ...(name ? { name } : {}),
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+        });
+        if (result?.signingIn) {
+          navigate(redirect, { replace: true });
+        } else {
+          setPendingEmail(email);
+          go("verify");
+        }
       } else {
-        setPendingEmail(email);
-        go("verify");
+        const phone = normalizePhoneInput((fd.get("phone") as string) || "");
+        const result = await signIn("password-tel", {
+          flow: "signUp",
+          phone,
+          password,
+          ...(name ? { name } : {}),
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+        });
+        if (result?.signingIn) {
+          toast.success("Compte créé. Bienvenue sur Classheure.");
+          navigate(redirect, { replace: true });
+        } else {
+          setError("Impossible de créer le compte. Essayez à nouveau.");
+        }
       }
     } catch (err) {
       setError(
-        mapError(err, "Impossible de créer le compte. Essayez un autre email."),
+        mapError(
+          err,
+          method === "email"
+            ? "Impossible de créer le compte. Essayez un autre email."
+            : "Impossible de créer le compte. Essayez un autre numéro.",
+        ),
       );
     } finally {
       setIsLoading(false);
@@ -175,13 +276,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  // ---- Renvoyer un nouveau code ----
+  // ---- Renvoyer un nouveau code (email) ----
   const handleResend = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // flow "reset" : génère et envoie un nouveau code sans toucher au mot de
-      // passe (et sans l'étape de connexion qui suivrait un "signUp" réussi).
       await signIn("password", { flow: "reset", email: pendingEmail });
       setOtp("");
       toast.success(
@@ -194,28 +293,66 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  // ---- Mot de passe oublié : demande de code ----
+  // ---- Mot de passe oublié (email) : demande de code ----
   const handleForgot = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
     const fd = new FormData(event.currentTarget);
-    const email = fd.get("email") as string;
     try {
-      await signIn("password", { flow: "reset", email });
-      setPendingEmail(email);
-      go("reset");
-      toast.success("Code de réinitialisation envoyé par email.");
+      if (method === "email") {
+        const email = ((fd.get("email") as string) || "").trim().toLowerCase();
+        await signIn("password", { flow: "reset", email });
+        setPendingEmail(email);
+        go("reset");
+        toast.success("Code de réinitialisation envoyé par email.");
+      } else {
+        const phone = normalizePhoneInput((fd.get("phone") as string) || "");
+        await requestPhonePasswordReset({ phone });
+        setPendingPhone(phone);
+        setOtp("");
+        setMethod("phone");
+        setMode("reset");
+        toast.success("Code de réinitialisation envoyé par SMS.");
+      }
     } catch (err) {
       setError(
-        mapError(err, "Impossible d'envoyer le code. Vérifie l'adresse."),
+        mapError(
+          err,
+          method === "email"
+            ? "Impossible d'envoyer le code. Vérifie l'adresse."
+            : "Impossible d'envoyer le SMS. Vérifie le numéro.",
+        ),
       );
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ---- Mot de passe oublié : nouveau mot de passe ----
+  // ---- Mot de passe oublié (téléphone) : vérification du code SMS ----
+  const handlePhoneVerify = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    const fd = new FormData(event.currentTarget);
+    const code = fd.get("code") as string;
+    try {
+      const { token } = await verifyPhoneResetCode({
+        phone: pendingPhone,
+        code: code.trim(),
+      });
+      setPhoneResetToken(token);
+      setError(null);
+      setMode("reset");
+      toast.success("Code validé. Choisissez un nouveau mot de passe.");
+    } catch (err) {
+      setError(mapError(err, "Code incorrect ou expiré."));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ---- Mot de passe oublié : nouveau mot de passe (email ou SMS) ----
   const handleReset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -230,6 +367,18 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       return;
     }
     try {
+      if (method === "phone") {
+        if (!phoneResetToken) {
+          setError("Session expirée. Recommencez « Mot de passe oublié ».");
+          setIsLoading(false);
+          return;
+        }
+        await completePhonePasswordReset({ token: phoneResetToken, newPassword });
+        toast.success("Mot de passe modifié. Connectez-vous avec votre numéro.");
+        setPhoneResetToken("");
+        go("signIn");
+        return;
+      }
       const result = await signIn("password", {
         flow: "reset-verification",
         email: pendingEmail,
@@ -242,14 +391,16 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       } else {
         setError("Code incorrect ou expiré.");
       }
-    } catch {
-      setError("Code incorrect ou expiré.");
+    } catch (err) {
+      setError(mapError(err, "Code incorrect ou expiré."));
     } finally {
       setIsLoading(false);
     }
   };
 
   const goHome = () => navigate("/");
+
+  const isPhoneReset = mode === "reset" && method === "phone";
 
   return (
     <div className="min-h-screen bg-background bg-grid relative flex flex-col">
@@ -263,17 +414,32 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <img src={logo} alt="Classheure" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
                 </button>
                 <CardTitle className="text-2xl">Connexion</CardTitle>
-                <CardDescription className="mt-1">Accédez à votre espace avec votre email et votre mot de passe</CardDescription>
+                <CardDescription className="mt-1">
+                  {method === "email"
+                    ? "Accédez à votre espace avec votre email et votre mot de passe"
+                    : "Accédez à votre espace avec votre numéro de téléphone et votre mot de passe"}
+                </CardDescription>
               </CardHeader>
               <form onSubmit={handleSignIn}>
-                <CardContent className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                <CardContent className="space-y-5">
+                  <MethodSwitch value={method} onChange={switchMethod} disabled={isLoading} />
+                  {method === "email" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="si-phone">Numéro de téléphone</Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="si-phone" name="phone" type="tel" inputMode="tel" placeholder="+33612345678 ou 0612345678" className="pl-9" disabled={isLoading} required />
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="password">Mot de passe</Label>
@@ -308,7 +474,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Créer un compte</CardTitle>
-                <CardDescription>Un code de vérification vous sera envoyé par email</CardDescription>
+                <CardDescription>
+                  {method === "email"
+                    ? "Un code de vérification vous sera envoyé par email"
+                    : "Aucune vérification : vous vous connecterez avec votre numéro"}
+                </CardDescription>
               </CardHeader>
               <div className="mx-6 mb-1 flex items-start gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
                 <ShieldCheck className="size-4 text-primary mt-0.5 shrink-0" />
@@ -321,6 +491,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               </div>
               <form onSubmit={handleSignUp}>
                 <CardContent className="space-y-5">
+                  <MethodSwitch value={method} onChange={switchMethod} disabled={isLoading} />
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="su-firstname">Prénom</Label>
@@ -331,13 +502,23 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       <Input id="su-lastname" name="lastName" type="text" placeholder="Dupont" autoComplete="family-name" disabled={isLoading} required />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="su-email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="su-email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                  {method === "email" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="su-email">Email</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="su-email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="su-phone">Numéro de téléphone</Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="su-phone" name="phone" type="tel" inputMode="tel" placeholder="+33612345678 ou 0612345678" className="pl-9" disabled={isLoading} required />
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="su-password">Mot de passe</Label>
                     <div className="relative">
@@ -414,22 +595,41 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Mot de passe oublié</CardTitle>
-                <CardDescription>Indiquez votre email pour recevoir un code de réinitialisation</CardDescription>
+                <CardDescription>
+                  {method === "email"
+                    ? "Indiquez votre email pour recevoir un code de réinitialisation"
+                    : "Indiquez votre numéro pour recevoir un code par SMS"}
+                </CardDescription>
               </CardHeader>
               <form onSubmit={handleForgot}>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fp-email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="fp-email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                  <MethodSwitch value={method} onChange={switchMethod} disabled={isLoading} />
+                  {method === "email" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="fp-email">Email</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="fp-email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="fp-phone">Numéro de téléphone</Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input id="fp-phone" name="phone" type="tel" inputMode="tel" placeholder="+33612345678 ou 0612345678" className="pl-9" disabled={isLoading} required />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Le code part par SMS (textbee). Seuls les comptes créés
+                        avec un numéro peuvent le recevoir.
+                      </p>
+                    </div>
+                  )}
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>
                 <CardFooter className="flex-col gap-3 pt-2">
                   <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : method === "email" ? <Mail className="mr-2 h-4 w-4" /> : <Phone className="mr-2 h-4 w-4" />}
                     Envoyer le code
                   </Button>
                   <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
@@ -440,7 +640,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             </>
           )}
 
-          {mode === "reset" && (
+          {mode === "reset" && !isPhoneReset && (
             <>
               <CardHeader className="text-center">
                 <CardTitle className="text-xl mt-2">Nouveau mot de passe</CardTitle>
@@ -462,6 +662,70 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <div className="space-y-2 pt-1">
                     <Label htmlFor="rs-confirm">Confirmer</Label>
                     <PasswordInput id="rs-confirm" name="confirm" placeholder="••••••••" disabled={isLoading} required autoComplete="new-password" />
+                  </div>
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                </CardContent>
+                <CardFooter className="flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
+                    {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enregistrement…</> : "Changer le mot de passe"}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />Retour
+                  </Button>
+                </CardFooter>
+              </form>
+            </>
+          )}
+
+          {mode === "reset" && isPhoneReset && !phoneResetToken && (
+            <>
+              <CardHeader className="text-center">
+                <div className="flex justify-center mb-1">
+                  <CheckCircle2 className="h-10 w-10 text-primary" />
+                </div>
+                <CardTitle>Code reçu par SMS</CardTitle>
+                <CardDescription>
+                  Saisissez le code envoyé au {pendingPhone}.
+                </CardDescription>
+              </CardHeader>
+              <form onSubmit={handlePhoneVerify}>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="rs-phone-code">Code reçu par SMS</Label>
+                    <Input id="rs-phone-code" name="code" inputMode="numeric" placeholder="123456" maxLength={6} disabled={isLoading} required autoFocus />
+                  </div>
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                </CardContent>
+                <CardFooter className="flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
+                    {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Vérification…</> : <>Vérifier <ArrowRight className="ml-2 h-4 w-4" /></>}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" disabled={isLoading} onClick={() => go("signIn")}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />Retour
+                  </Button>
+                </CardFooter>
+              </form>
+            </>
+          )}
+
+          {mode === "reset" && isPhoneReset && phoneResetToken && (
+            <>
+              <CardHeader className="text-center">
+                <CardTitle className="text-xl mt-2">Nouveau mot de passe</CardTitle>
+                <CardDescription>Choisissez un mot de passe pour le {pendingPhone}.</CardDescription>
+              </CardHeader>
+              <form onSubmit={handleReset}>
+                <CardContent className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="rp-password">Nouveau mot de passe</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <PasswordInput id="rp-password" name="newPassword" placeholder="8 caractères minimum" disabled={isLoading} required minLength={8} autoComplete="new-password" />
+                    </div>
+                  </div>
+                  <div className="space-y-2 pt-1">
+                    <Label htmlFor="rp-confirm">Confirmer</Label>
+                    <PasswordInput id="rp-confirm" name="confirm" placeholder="••••••••" disabled={isLoading} required autoComplete="new-password" />
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </CardContent>

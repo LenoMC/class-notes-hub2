@@ -158,7 +158,7 @@ export const submitAccessRequest = mutation({
     });
     // Notification email + SMS + MP Discord aux administrateurs globaux
     const admins = (await ctx.db.query("users").collect()).filter(
-      (u) => u.isAdmin && u.email,
+      (u) => u.isAdmin && u.email && u.email.includes("@"),
     );
     const adminEmails = admins.map((a) => a.email!);
     const adminPhones = admins
@@ -480,7 +480,9 @@ export const testDiscord = action({
   },
 });
 
-/** Approbation ou refus d'une demande (admin global). */
+/** Approbation ou refus d'une demande (admin global).
+    Envoie une 2e notification (email + SMS + Discord) à TOUS les admins
+    globaux pour qu'ils sachent que la demande a été traitée. */
 export const reviewAccessRequest = mutation({
   args: {
     requestId: v.id("accessRequests"),
@@ -500,6 +502,229 @@ export const reviewAccessRequest = mutation({
       reviewNote: note?.trim() || undefined,
       reviewedAt: Date.now(),
     });
+
+    // ----- 2e notification : décision à tous les admins globaux -----
+    const admins = (await ctx.db.query("users").collect()).filter(
+      (u) => u.isAdmin && u.email && u.email.includes("@"),
+    );
+    const adminEmails = admins.map((a) => a.email!);
+    const adminPhones = admins.map((a) => a.phone).filter((p): p is string => !!p);
+    const adminDiscordIds = admins
+      .map((a) => a.discordId)
+      .filter((d): d is string => !!d);
+    if (adminEmails.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendDecisionEmails, {
+        to: adminEmails,
+        userName: row.userName ?? row.userEmail,
+        userEmail: row.userEmail,
+        approve,
+        reviewerName: admin.name ?? "un administrateur",
+        note: note?.trim() || undefined,
+      });
+    }
+    if (adminPhones.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendDecisionSms, {
+        phones: adminPhones,
+        userName: row.userName ?? row.userEmail,
+        approve,
+      });
+    }
+    if (adminDiscordIds.length > 0) {
+      await ctx.scheduler.runAfter(0, api.app.sendDecisionDiscordDm, {
+        discordIds: adminDiscordIds,
+        userName: row.userName ?? row.userEmail,
+        userEmail: row.userEmail,
+        approve,
+        reviewerName: admin.name ?? "un administrateur",
+      });
+    }
+  },
+});
+
+/** 2e notification : email « décision prise » à tous les admins globaux. */
+export const sendDecisionEmails = action({
+  args: {
+    to: v.array(v.string()),
+    userName: v.string(),
+    userEmail: v.string(),
+    approve: v.boolean(),
+    reviewerName: v.string(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { to, userName, userEmail, approve, reviewerName, note }) => {
+    if (to.length === 0) return;
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.warn(
+        "[décision] RESEND_API_KEY manquante : email non envoyé.",
+      );
+      return;
+    }
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const subject = approve
+      ? `Classheure — demande APPROUVÉE : ${userName}`
+      : `Classheure — demande REFUSÉE : ${userName}`;
+    const color = approve ? "#2f9e44" : "#e03131";
+    const badge = approve
+      ? "✅ Demande approuvée"
+      : "❌ Demande refusée";
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+        <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Décision sur une demande d'accès</h1>
+        </div>
+        <div style="padding:24px">
+          <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:${color}">${badge}</p>
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
+            <strong>${userName}</strong> (${userEmail}) — demande traitée par
+            <strong>${reviewerName}</strong>.
+          </p>
+          ${note ? `<p style="margin:0 0 12px;font-size:13px;color:#c3c9e8">Note : ${note}</p>` : ""}
+          <p style="margin:0 0 8px;font-size:13px;color:#8b93b8">
+            Vous recevez cet email pour information : la décision est déjà prise.
+          </p>
+          ${
+            siteUrl
+              ? `<a href="${siteUrl}/admin" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;font-size:13px;margin-top:10px">Ouvrir l'administration</a>`
+              : ""
+          }
+          <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
+            Vous recevez cet email car vous êtes administrateur global de Classheure.
+          </p>
+        </div>
+      </div>`;
+    try {
+      await axios.post(
+        "https://api.resend.com/emails",
+        { from: "Classheure <onboarding@resend.dev>", to, subject, html },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch (err) {
+      console.warn("[décision] échec envoi Resend :", err);
+    }
+  },
+});
+
+/** 2e notification : SMS « décision prise » aux admins avec numéro. */
+export const sendDecisionSms = action({
+  args: {
+    phones: v.array(v.string()),
+    userName: v.string(),
+    approve: v.boolean(),
+  },
+  handler: async (ctx, { phones, userName, approve }) => {
+    const apiKey = process.env.TEXTBEE_API_KEY;
+    const deviceId =
+      process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
+    if (!apiKey || !deviceId || phones.length === 0) return;
+    const text = approve
+      ? `Classheure : demande de ${userName} APPROUVÉE.`
+      : `Classheure : demande de ${userName} REFUSÉE.`;
+    for (const phone of phones) {
+      try {
+        const res = await axios.post(
+          `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
+          { recipients: [phone], message: text },
+          {
+            headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+            validateStatus: () => true,
+          },
+        );
+        if (res.status >= 400) {
+          console.warn(
+            `[décision] textbee a refusé l'envoi vers ${phone} : HTTP ${res.status}`,
+          );
+        }
+      } catch (err) {
+        console.warn("[décision] échec SMS vers", phone, err);
+      }
+    }
+  },
+});
+
+/** 2e notification : MP Discord « décision prise » aux admins liés. */
+export const sendDecisionDiscordDm = action({
+  args: {
+    discordIds: v.array(v.string()),
+    userName: v.string(),
+    userEmail: v.string(),
+    approve: v.boolean(),
+    reviewerName: v.string(),
+  },
+  handler: async (ctx, { discordIds, userName, userEmail, approve, reviewerName }) => {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token || discordIds.length === 0) return;
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const headers = {
+      Authorization: `Bot ${token}`,
+      "Content-Type": "application/json",
+    };
+    const embed = {
+      title: approve ? "✅ Demande approuvée" : "❌ Demande refusée",
+      description: `**${userName}** (${userEmail}) — décision prise par **${reviewerName}**.`,
+      color: approve ? 0x2f9e44 : 0xe03131,
+      fields: [
+        {
+          name: "Utilisateur",
+          value: `${userName}\n${userEmail}`,
+          inline: false,
+        },
+        {
+          name: "Décision",
+          value: approve ? "✅ Approuvée" : "❌ Refusée",
+          inline: true,
+        },
+        {
+          name: "Par",
+          value: reviewerName,
+          inline: true,
+        },
+      ],
+      ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
+      footer: {
+        text: "Classheure — votre classe, documentée",
+        ...(siteUrl ? { icon_url: `${siteUrl}/logo.svg` } : {}),
+      },
+      timestamp: new Date().toISOString(),
+    };
+    for (const discordId of discordIds) {
+      try {
+        const channelRes = await axios.post(
+          "https://discord.com/api/v10/users/@me/channels",
+          { recipient_id: discordId },
+          { headers, validateStatus: () => true },
+        );
+        const channelId = channelRes.data?.id as string | undefined;
+        if (channelRes.status >= 400 || !channelId) {
+          console.warn(
+            `[décision] ouverture de MP impossible pour ${discordId} : HTTP ${channelRes.status}`,
+          );
+          continue;
+        }
+        const msgRes = await axios.post(
+          `https://discord.com/api/v10/channels/${channelId}/messages`,
+          {
+            content: approve
+              ? `✅ ${userName} a été approuvé par ${reviewerName}.`
+              : `❌ La demande de ${userName} a été refusée par ${reviewerName}.`,
+            embeds: [embed],
+          },
+          { headers, validateStatus: () => true },
+        );
+        if (msgRes.status >= 400) {
+          console.warn(
+            `[décision] envoi du message impossible pour ${discordId} : HTTP ${msgRes.status}`,
+          );
+        }
+      } catch (err) {
+        console.warn("[décision] échec MP vers", discordId, err);
+      }
+    }
   },
 });
 
@@ -602,6 +827,37 @@ export const updateProfile = mutation({
 // ---------- Modification d'email ----------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** [DEV] Normalise tous les emails en minuscules (comptes email, pas téléphone).
+    À lancer une fois : bunx convex run app:normalizeEmailCasse */
+export const normalizeEmailCasse = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    let usersFixed = 0;
+    for (const u of users) {
+      // Les comptes téléphone ont email = "+33..." : rien à normaliser
+      if (!u.email || !u.email.includes("@")) continue;
+      const lower = u.email.toLowerCase();
+      if (u.email !== lower) {
+        await ctx.db.patch(u._id, { email: lower });
+        usersFixed++;
+      }
+    }
+    const accounts = await ctx.db.query("authAccounts").collect();
+    let accountsFixed = 0;
+    for (const a of accounts) {
+      if (a.provider !== "password") continue;
+      if (!a.providerAccountId.includes("@")) continue;
+      const lower = a.providerAccountId.toLowerCase();
+      if (a.providerAccountId !== lower) {
+        await ctx.db.patch(a._id, { providerAccountId: lower });
+        accountsFixed++;
+      }
+    }
+    return { usersFixed, accountsFixed };
+  },
+});
 
 async function changeEmail(ctx: any, user: UserDoc, newEmailRaw: string) {
   const newEmail = newEmailRaw.trim().toLowerCase();

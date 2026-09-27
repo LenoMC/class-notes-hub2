@@ -1,12 +1,22 @@
-// Configuration Convex Auth : email + mot de passe
-// - Vérification email obligatoire à l'inscription et à chaque connexion
-// - Réinitialisation de mot de passe ("mot de passe oublié") par code email
+// Configuration Convex Auth : email + mot de passe, téléphone + mot de passe
+// - Email : vérification obligatoire à l'inscription (code 6 chiffres) et reset par code email
+// - Téléphone : inscription/connexion sans vérification, "mot de passe oublié" par SMS (textbee)
+// - Les emails sont normalisés en minuscules : Seressy@mail.com = seressy@mail.com
 
 import { Password } from "@convex-dev/auth/providers/Password";
-import { convexAuth } from "@convex-dev/auth/server";
+import { convexAuth, invalidateSessions } from "@convex-dev/auth/server";
 import { Email } from "@convex-dev/auth/providers/Email";
+import { Scrypt } from "lucia";
 import axios from "axios";
 import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  mutation,
+} from "./_generated/server";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 function randomCode(): string {
   const random: RandomReader = {
@@ -17,8 +27,21 @@ function randomCode(): string {
   return generateRandomString(random, "0123456789", 6);
 }
 
-/** Envoi du code de vérification/réinitialisation via Resend (RESEND_API_KEY).
-    Fallback sur le canal Freebuff si la clé Resend est absente. */
+function randomToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export const PHONE_RE = /^\+\d{8,15}$/;
+
+/** Les emails sont tout en minuscules : la casse n'a aucune importance. */
+function normalizeEmail(email: string): string {
+  return (email ?? "").trim().toLowerCase();
+}
+
+/** Code de vérification / réinitialisation envoyé par email. */
 async function sendCodeEmail(email: string, token: string, kind: "verify" | "reset") {
   const subject =
     kind === "verify"
@@ -99,13 +122,59 @@ function freebuffEmailProvider(kind: "verify" | "reset") {
   });
 }
 
+/** Code de réinitialisation envoyé par SMS via textbee (téléphone Android). */
+async function sendCodeSms(phone: string, token: string) {
+  const apiKey = process.env.TEXTBEE_API_KEY;
+  const deviceId =
+    process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
+  if (!apiKey || !deviceId) {
+    throw new Error(
+      "L'envoi de SMS n'est pas disponible pour le moment. Contactez un administrateur.",
+    );
+  }
+  const res = await axios.post(
+    `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
+    {
+      recipients: [phone],
+      message: `Classheure : votre code de réinitialisation est ${token}. Il expire dans 15 minutes.`,
+    },
+    {
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      validateStatus: () => true,
+    },
+  );
+  if (res.status >= 400) {
+    console.warn(
+      "[auth] textbee a refusé l'envoi du code : HTTP",
+      res.status,
+      typeof res.data === "object" ? JSON.stringify(res.data).slice(0, 300) : res.data,
+    );
+    throw new Error("Impossible d'envoyer le SMS. Réessayez dans un instant.");
+  }
+}
+
+/** Provider "email" dont l'identifiant est un numéro de téléphone :
+    le code de reset part par SMS. Utilisé par le provider "password-tel". */
+function phoneResetProvider() {
+  return Email({
+    id: "phone",
+    maxAge: 60 * 15,
+    generateVerificationToken: randomCode,
+    async sendVerificationRequest({ identifier, token }) {
+      await sendCodeSms(identifier, token);
+    },
+  });
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
+    // ----- Email + mot de passe (vérification email obligatoire) -----
     Password({
       id: "password",
       profile(params) {
         return {
-          email: params.email as string,
+          // Normalisation : la casse de l'email est ignorée partout.
+          email: normalizeEmail(params.email as string),
           ...(params.name ? { name: params.name as string } : {}),
           ...(params.firstName
             ? { firstName: params.firstName as string }
@@ -119,10 +188,219 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         }
         // TODO: renforcer si besoin (majuscule, chiffre...)
       },
-      // Vérification email à l'inscription et à la connexion
       verify: freebuffEmailProvider("verify"),
-      // Réinitialisation de mot de passe par code email
       reset: freebuffEmailProvider("reset"),
     }),
+    // ----- Téléphone + mot de passe (sans vérification après inscription) -----
+    // Le compte est stocké avec email = numéro (ex. +33612345678), provider
+    // "password-tel". Le "reset" envoie le code par SMS (phoneResetProvider).
+    Password({
+      id: "password-tel",
+      profile(params) {
+        const phone = ((params.phone as string) ?? "").trim();
+        if (!PHONE_RE.test(phone)) {
+          throw new Error(
+            "Numéro invalide : format international attendu, ex. +33612345678.",
+          );
+        }
+        return {
+          email: phone,
+          ...(params.name ? { name: params.name as string } : {}),
+          ...(params.firstName
+            ? { firstName: params.firstName as string }
+            : {}),
+          ...(params.lastName ? { lastName: params.lastName as string } : {}),
+        };
+      },
+      validatePasswordRequirements: (password: string) => {
+        if (!password || password.length < 8) {
+          throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+        }
+      },
+      reset: phoneResetProvider(),
+    }),
   ],
+});
+
+// ---------- Vérification du domaine email (l'adresse existe-t-elle ?) ----------
+
+const WELL_KNOWN_EMAIL_DOMAINS = [
+  "gmail.com", "outlook.com", "outlook.fr", "hotmail.com", "hotmail.fr",
+  "live.com", "live.fr", "yahoo.com", "yahoo.fr", "icloud.com", "orange.fr",
+  "wanadoo.fr", "free.fr", "sfr.fr", "laposte.net", "aol.com", "aliceadsl.fr",
+  "proton.me", "protonmail.com", "mail.com", "mail.ru", "gmx.com", "gmx.fr",
+  "zoho.com", "hey.com", "bbox.fr", "numericable.fr", "cegetel.net",
+  "ac-normandie.fr", "ac-lyon.fr", "ac-paris.fr", "ac-bordeaux.fr",
+  "ac-lille.fr", "ac-marseille.fr", "ac-nantes.fr", "ac-rennes.fr",
+  "ac-strasbourg.fr", "ac-toulouse.fr", "ac-creteil.fr", "ac-versailles.fr",
+  "ac-amiens.fr", "ac-caen.fr", "ac-dijon.fr", "ac-grenoble.fr",
+  "ac-montpellier.fr", "ac-orleans-tours.fr", "ac-reims.fr", "ac-rouen.fr",
+  "ac-clermont.fr", "ac-poitiers.fr", "ac-limoges.fr", "ac-corse.fr",
+  "ac-guadeloupe.fr", "ac-martinique.fr", "ac-guyane.fr", "ac-reunion.fr",
+  "education.fr", "monlycee.net", "edu.gov.fr",
+];
+
+async function dnsQuery(name: string, type: "MX" | "A") {
+  const res = await fetch(
+    `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { Answer?: Array<{ data: string }> };
+  return data.Answer && data.Answer.length > 0;
+}
+
+/** Vérifie que le domaine d'un email peut recevoir du courrier (MX).
+    Détecte les fautes de frappe du type seressy@mial.com à l'inscription.
+    Retourne false seulement si le domaine n'a ni MX ni enregistrement A. */
+export const verifyEmailDeliverable = action({
+  args: { email: v.string() },
+  handler: async (_ctx, { email }) => {
+    const domain = normalizeEmail(email).split("@")[1];
+    if (!domain || !domain.includes(".")) return false;
+    if (WELL_KNOWN_EMAIL_DOMAINS.includes(domain)) return true;
+    try {
+      if (await dnsQuery(domain, "MX")) return true;
+      // Certains domaines rares n'acceptent que du A/AAAA
+      if (await dnsQuery(domain, "A")) return true;
+      return false;
+    } catch (err) {
+      // En cas d'erreur réseau (DNS indisponible), on ne bloque pas l'inscription
+      console.warn("[auth] vérification DNS impossible :", err);
+      return true;
+    }
+  },
+});
+
+// ---------- Mot de passe oublié par téléphone (SMS textbee) ----------
+
+/** [INTERNE] Le compte téléphone existe-t-il ? */
+export const getPhoneUser = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, { phone }) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", phone))
+      .first();
+  },
+});
+
+/** [INTERNE] Stocke un code de reset SMS (supprime les codes précédents). */
+export const createPhoneResetCode = internalMutation({
+  args: { phone: v.string(), code: v.string() },
+  handler: async (ctx, { phone, code }) => {
+    const old = await ctx.db
+      .query("phoneResetCodes")
+      .withIndex("by_phone", (q) => q.eq("phone", phone))
+      .collect();
+    for (const row of old) await ctx.db.delete(row._id);
+    await ctx.db.insert("phoneResetCodes", {
+      phone,
+      code,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+  },
+});
+
+/** Demande un code de réinitialisation par SMS pour un compte téléphone. */
+export const requestPhonePasswordReset = action({
+  args: { phone: v.string() },
+  handler: async (ctx, { phone }) => {
+    const normalized = phone.trim();
+    if (!PHONE_RE.test(normalized)) {
+      throw new Error(
+        "Numéro invalide : format international attendu, ex. +33612345678.",
+      );
+    }
+    const user = await ctx.runQuery(internal.auth.getPhoneUser, {
+      phone: normalized,
+    });
+    if (!user) {
+      throw new Error("Aucun compte n'existe avec ce numéro de téléphone.");
+    }
+    const token = randomCode();
+    await ctx.runMutation(internal.auth.createPhoneResetCode, {
+      phone: normalized,
+      code: token,
+    });
+    await sendCodeSms(normalized, token);
+    return true;
+  },
+});
+
+/** Vérifie le code reçu par SMS et renvoie un jeton d'échange (15 min). */
+export const verifyPhoneResetCode = mutation({
+  args: { phone: v.string(), code: v.string() },
+  handler: async (ctx, { phone, code }) => {
+    const normalized = phone.trim();
+    const row = await ctx.db
+      .query("phoneResetCodes")
+      .withIndex("by_phone", (q) => q.eq("phone", normalized))
+      .first();
+    if (!row || row.expiresAt < Date.now()) {
+      throw new Error("Code expiré. Demandez un nouveau code.");
+    }
+    if (row.code !== code.trim()) {
+      throw new Error("Code incorrect.");
+    }
+    const resetToken = randomToken();
+    await ctx.db.patch(row._id, {
+      resetToken,
+      tokenExpiresAt: Date.now() + 15 * 60 * 1000,
+    });
+    return { token: resetToken };
+  },
+});
+
+/** [INTERNE] Applique le nouveau mot de passe au compte téléphone. */
+export const applyPhonePasswordReset = internalMutation({
+  args: { phone: v.string(), passwordHash: v.string() },
+  handler: async (ctx, { phone, passwordHash }) => {
+    const account = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "password-tel").eq("providerAccountId", phone),
+      )
+      .first();
+    if (!account) throw new Error("Compte téléphone introuvable.");
+    await ctx.db.patch(account._id, { secret: passwordHash });
+    return account.userId;
+  },
+});
+
+/** [INTERNE] Consomme le jeton de reset (usage unique), renvoie le compte. */
+export const consumePhoneResetToken = internalMutation({
+  args: { token: v.string() },
+  handler: async (ctx, { token }) => {
+    const row = await ctx.db
+      .query("phoneResetCodes")
+      .withIndex("by_token", (q) => q.eq("resetToken", token))
+      .first();
+    if (!row || !row.tokenExpiresAt || row.tokenExpiresAt < Date.now()) {
+      throw new Error("Session de réinitialisation expirée. Recommencez.");
+    }
+    await ctx.db.delete(row._id);
+    return row.phone;
+  },
+});
+
+/** Applique le nouveau mot de passe (compte téléphone), jeton à usage unique. */
+export const completePhonePasswordReset = action({
+  args: { token: v.string(), newPassword: v.string() },
+  handler: async (ctx, { token, newPassword }) => {
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+    }
+    const phone = await ctx.runMutation(internal.auth.consumePhoneResetToken, {
+      token,
+    });
+    const passwordHash = await new Scrypt().hash(newPassword);
+    const userId = await ctx.runMutation(internal.auth.applyPhonePasswordReset, {
+      phone,
+      passwordHash,
+    });
+    // Déconnecte toutes les sessions de l'utilisateur (sécurité)
+    await invalidateSessions(ctx, { userId, except: [] });
+    return true;
+  },
 });
