@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,11 +38,14 @@ import {
   periodLabel,
   periodsForDay,
 } from "@/lib/periods";
-import { formatDayFr } from "@/lib/weeks";
+import { formatDayFr, weekLabelFor } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
   Ban,
+  CalendarDays,
   CalendarX2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExternalLink,
   FileUp,
@@ -84,6 +88,22 @@ type WeekState = {
   nextSchoolMonday: string | null;
 };
 
+type ArchivedFile = {
+  _id: Id<"courseFiles">;
+  title: string;
+  kind: "cours" | "devoir";
+  fileName: string;
+  fileType: string;
+  bytes: number | null;
+  hasFile: boolean;
+  storageId: Id<"_storage"> | null;
+  externalUrl: string | null;
+  createdAt: number;
+  day: string;
+  start: string;
+  subject: string;
+};
+
 /** Position d'un cours dans la grille : ligne de départ + nombre de lignes. */
 function slotPlacement(slot: Slot): { startIdx: number; span: number } {
   const startIdx = PERIODS.findIndex((p) => p.start === slot.start);
@@ -121,6 +141,10 @@ const colLeft = (di: number) =>
   `calc(${AXIS_W}px + ${di} * ((100% - ${AXIS_W + 40}px) / 5 + 8px))`;
 const COL_WIDTH = `calc((100% - ${AXIS_W + 40}px) / 5)`;
 const GRID_COLS = `${AXIS_W}px repeat(5, calc((100% - ${AXIS_W + 40}px) / 5))`;
+
+/** Géométrie de la vue mobile : une seule colonne jour, après l'axe. */
+const M_LEFT = `calc(${AXIS_W}px + 6px)`;
+const M_WIDTH = `calc(100% - ${AXIS_W + 18}px)`;
 
 /** Convertit "HH:MM" en minutes depuis minuit. */
 const toMin = (hhmm: string) => {
@@ -161,26 +185,46 @@ export default function Timetable() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedSlotId = searchParams.get("slot");
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  // Semaine affichée : 0 = actuelle, +1 = suivante, -1 = précédente…
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const weekState = useQuery(api.app.weekState) as WeekState | undefined;
-  // Semaine actuelle uniquement (A ou B selon l'alternance calculée).
-  const slots = useQuery(api.app.listMySlots, { week: weekState?.week ?? "A" }) ?? [];
+  const slots = useQuery(
+    api.app.listMySlots,
+    // Semaine actuelle : filtration personnalisée (options + groupe).
+    weekOffset === 0 ? { week: weekState?.week ?? "A" } : "skip",
+  ) ?? [];
+  // Semaine explorée (suivante ou passée) : vue neutre sans personnalisation.
+  const exploreSlots = useQuery(
+    api.app.listMySlotsForWeek,
+    weekOffset === 0 || !user?.classId ? "skip" : { week: "A" },
+  ) ?? [];
+  const exploreSlotsB = useQuery(
+    api.app.listMySlotsForWeek,
+    weekOffset === 0 || !user?.classId ? "skip" : { week: "B" },
+  ) ?? [];
+  const displayedSlots = weekOffset === 0 ? slots : [...exploreSlots, ...exploreSlotsB];
   const [selected, setSelected] = useState<Slot | null>(null);
 
   useEffect(() => {
     if (!selectedSlotId) return;
-    const found = slots.find((s) => s._id === selectedSlotId);
+    const found = displayedSlots.find((s) => s._id === selectedSlotId);
     if (found) setSelected(found);
-  }, [selectedSlotId, slots]);
+  }, [selectedSlotId, displayedSlots]);
 
   const openSlot = (slot: Slot) => {
+    if (weekOffset !== 0) {
+      // Exploration d'une semaine passée/future : ouverture simple, sans URL.
+      setSelected(slot);
+      return;
+    }
     setSelected(slot);
     setSearchParams({ slot: slot._id }, { replace: true });
   };
 
   const closeSlot = () => {
     setSelected(null);
-    setSearchParams({}, { replace: true });
+    if (weekOffset === 0) setSearchParams({}, { replace: true });
   };
 
   // Édition demandée depuis le dialog d'un cours (bouton « Modifier »)
@@ -211,13 +255,15 @@ export default function Timetable() {
         </Card>
       ) : (
         <TimetableGrid
-          slots={slots as Slot[]}
+          slots={displayedSlots as Slot[]}
           onOpen={openSlot}
           onEdit={(slot) => setEditingSlotId(slot._id)}
           isClassAdmin={user.isClassAdmin}
           isAdmin={user.isAdmin}
           classId={user.classId}
           weekState={weekState}
+          weekOffset={weekOffset}
+          onWeekOffset={setWeekOffset}
         />
       )}
 
@@ -258,6 +304,8 @@ function TimetableGrid({
   isAdmin,
   classId,
   weekState,
+  weekOffset,
+  onWeekOffset,
 }: {
   slots: Slot[];
   onOpen: (slot: Slot) => void;
@@ -266,12 +314,27 @@ function TimetableGrid({
   isAdmin: boolean;
   classId: Id<"classes">;
   weekState: WeekState | undefined;
+  weekOffset: number;
+  onWeekOffset: (offset: number) => void;
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
+  const [archivesOpen, setArchivesOpen] = useState(false);
+  const exploring = weekOffset !== 0;
   const week = weekState?.week ?? "A";
   const DAYS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
   const todayName = DAYS_FR[new Date().getDay()];
+  // Vue mobile : un seul jour affiché, navigué aux flèches gauche/droite.
+  const isMobile = useIsMobile();
+  const todayIdx = Math.max(
+    0,
+    DAYS.indexOf(todayName as (typeof DAYS)[number]),
+  );
+  const [dayIdx, setDayIdx] = useState(todayIdx);
+  const colLeftFor = (di: number) => (isMobile ? M_LEFT : colLeft(di));
+  const colW = isMobile ? M_WIDTH : COL_WIDTH;
+  const visibleDays: string[] = isMobile ? [DAYS[dayIdx]] : [...DAYS];
+  const todayShown = isMobile ? dayIdx === todayIdx : true;
   // Horloge vivante : re-rendu chaque 30 s pour déplacer la ligne « maintenant ».
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -280,7 +343,8 @@ function TimetableGrid({
   }, []);
   const isSchoolDay = todayName !== "Samedi" && todayName !== "Dimanche";
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const nowY = isSchoolDay ? yForMinute(nowMin) : null;
+  // Ligne « maintenant » : uniquement en vue semaine actuelle, jour affiché.
+  const nowY = !exploring && isSchoolDay ? yForMinute(nowMin) : null;
 
   // Regroupe les cours par case de départ « jour|ligne » (A et B côte à côte)
   const cellGroups = useMemo(() => {
@@ -288,14 +352,16 @@ function TimetableGrid({
     for (const s of slots) {
       const di = DAYS.indexOf(s.day as (typeof DAYS)[number]);
       if (di < 0) continue;
+      // Sur mobile on ne montre que le jour sélectionné, ramené en colonne 0.
+      if (isMobile && di !== dayIdx) continue;
       const { startIdx } = slotPlacement(s);
-      const key = `${di}|${startIdx}`;
+      const key = `${isMobile ? 0 : di}|${startIdx}`;
       const arr = map.get(key) ?? [];
       arr.push(s);
       map.set(key, arr);
     }
     return map;
-  }, [slots]);
+  }, [slots, isMobile, dayIdx]);
 
   return (
     <>
@@ -304,7 +370,7 @@ function TimetableGrid({
           <h1 className="text-2xl font-semibold tracking-tight">Emploi du temps</h1>
           <p className="text-sm text-muted-foreground">
             Sélectionnez un cours pour consulter ses documents.
-            {weekState?.isHoliday && weekState.holidayLabel && (
+            {weekState?.isHoliday && weekState.holidayLabel && weekOffset === 0 && (
               <span className="block sm:inline text-amber-300">
                 {weekState.holidayLabel} — reprise le{" "}
                 {formatDayFr(weekState.nextSchoolMonday)}.
@@ -312,46 +378,169 @@ function TimetableGrid({
             )}
           </p>
         </div>
-        <Badge
-          variant="outline"
-          className="font-mono text-xs border-primary/50 text-primary"
-        >
-          Semaine {weekState?.isHoliday ? "— vacances" : week || "…"} (actuelle)
-        </Badge>
-        {canEdit && (
-          <Button className="gap-1.5" onClick={() => setShowAdd(true)}>
-            <Plus className="size-4" /> Ajouter un cours
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Navigation de semaine : précédente / actuelle / suivante */}
+          <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-secondary/40 p-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Semaine précédente"
+              title="Semaine précédente"
+              onClick={() => onWeekOffset(weekOffset - 1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <button
+              type="button"
+              onClick={() => onWeekOffset(0)}
+              className={cn(
+                "cursor-pointer rounded-lg px-3 py-1 text-xs font-mono font-semibold transition-colors",
+                weekOffset === 0
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Revenir à la semaine actuelle"
+            >
+              {weekOffset === 0 && "Actuelle"}
+              {weekOffset === 1 && "Suivante"}
+              {weekOffset === -1 && "Précédente"}
+              {weekOffset > 1 && `+${weekOffset}`}
+              {weekOffset < -1 && `${weekOffset}`}
+            </button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Semaine suivante"
+              title="Semaine suivante"
+              onClick={() => onWeekOffset(weekOffset + 1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              "font-mono text-xs",
+              exploring
+                ? "border-amber-400/50 text-amber-300"
+                : "border-primary/50 text-primary",
+            )}
+          >
+            Semaine {weekState?.isHoliday && weekOffset === 0 ? "— vacances" : week || "…"}
+            {exploring ? " (aperçu)" : " (actuelle)"}
+          </Badge>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-9"
+            aria-label="Fiches des semaines passées"
+            title="Fiches des semaines passées"
+            onClick={() => setArchivesOpen(true)}
+          >
+            <CalendarDays className="size-4" />
           </Button>
-        )}
+          {canEdit && (
+            <Button
+              className="gap-1.5"
+              onClick={() => setShowAdd(true)}
+              disabled={exploring}
+            >
+              <Plus className="size-4" /> Ajouter un cours
+            </Button>
+          )}
+        </div>
       </div>
+
+      {exploring && (
+        <p className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2.5 text-xs text-amber-200">
+          Aperçu d'une semaine {week} possible — cours affichés sans filtrage de vos
+          options/groupes, documents en lecture seule. Cliquez sur « Actuelle »
+          pour revenir.
+        </p>
+      )}
+
+      {/* Barre de navigation des jours (mobile uniquement) */}
+      {isMobile && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-secondary/40 p-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label="Jour précédent"
+            onClick={() => setDayIdx((i) => Math.max(0, i - 1))}
+            disabled={dayIdx === 0}
+          >
+            <ChevronLeft className="size-5" />
+          </Button>
+          <div className="flex items-center gap-2">
+            {DAYS.map((day, di) => (
+              <button
+                key={day}
+                type="button"
+                onClick={() => setDayIdx(di)}
+                className={cn(
+                  "cursor-pointer rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
+                  di === dayIdx
+                    ? "bg-primary/15 text-primary"
+                    : di === todayIdx
+                      ? "text-primary/70 underline underline-offset-4"
+                      : "text-muted-foreground",
+                )}
+              >
+                {day.slice(0, 3)}.
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label="Jour suivant"
+            onClick={() => setDayIdx((i) => Math.min(DAYS.length - 1, i + 1))}
+            disabled={dayIdx === DAYS.length - 1}
+          >
+            <ChevronRight className="size-5" />
+          </Button>
+        </div>
+      )}
 
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto scrollbar-none">
-            <div className="min-w-[760px]">
+            <div className={isMobile ? "" : "min-w-[760px]"}>
               {/* En-tête des jours — MÊME système de coordonnées absolu que le
                   corps (colLeft/COL_WIDTH) : alignement garanti au pixel, sans
                   dépendre d'une grille CSS distincte. */}
               <div className="relative mb-2" style={{ height: 40 }}>
-                {DAYS.map((day, di) => (
-                  <div
-                    key={day}
-                    className={cn(
-                      "absolute flex flex-col items-center justify-center py-1.5 text-sm font-bold tracking-wide rounded-lg border transition-colors",
-                      day === todayName
-                        ? "bg-primary/20 border-primary/50 text-primary shadow-[0_0_16px_rgba(91,116,201,0.25)]"
-                        : "bg-secondary/60 border-border/50",
-                    )}
-                    style={{ top: 0, height: 40, left: colLeft(di), width: COL_WIDTH }}
-                  >
-                    <span>{day}</span>
-                    {day === todayName && (
-                      <span className="text-[9px] font-mono font-normal opacity-75 leading-none">
-                        aujourd'hui
-                      </span>
-                    )}
-                  </div>
-                ))}
+                {visibleDays.map((day) => {
+                  const di = DAYS.indexOf(day as (typeof DAYS)[number]);
+                  return (
+                    <div
+                      key={day}
+                      className={cn(
+                        "absolute flex flex-col items-center justify-center py-1.5 text-sm font-bold tracking-wide rounded-lg border transition-colors",
+                        day === todayName && todayShown
+                          ? "bg-primary/20 border-primary/50 text-primary shadow-[0_0_16px_rgba(91,116,201,0.25)]"
+                          : "bg-secondary/60 border-border/50",
+                      )}
+                      style={{
+                        top: 0,
+                        height: 40,
+                        left: colLeftFor(di),
+                        width: colW,
+                      }}
+                    >
+                      <span>{day}</span>
+                      {day === todayName && todayShown && (
+                        <span className="text-[9px] font-mono font-normal opacity-75 leading-none">
+                          aujourd'hui
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Corps : positionnement absolu — les heures sont posées SUR les
@@ -361,18 +550,21 @@ function TimetableGrid({
               <div className="relative" style={{ height: BODY_H }}>
                 {/* Cellules de fond (toutes les cases jour/créneau) */}
                 {PERIODS.map((p, i) =>
-                  DAYS.map((day, di) => (
-                    <div
-                      key={`bg-${p.id}-${day}`}
-                      className="absolute rounded-xl border border-border/40 bg-secondary/25"
-                      style={{
-                        top: ROW_TOPS[i],
-                        height: ROW_H,
-                        left: colLeft(di),
-                        width: COL_WIDTH,
-                      }}
-                    />
-                  )),
+                  visibleDays.map((day) => {
+                    const di = DAYS.indexOf(day as (typeof DAYS)[number]);
+                    return (
+                      <div
+                        key={`bg-${p.id}-${day}`}
+                        className="absolute rounded-xl border border-border/40 bg-secondary/25"
+                        style={{
+                          top: ROW_TOPS[i],
+                          height: ROW_H,
+                          left: colLeftFor(di),
+                          width: colW,
+                        }}
+                      />
+                    );
+                  }),
                 )}
 
                 {/* Bandes de pause. Récréation : fine, contenue entre la fin de
@@ -494,8 +686,8 @@ function TimetableGrid({
                       style={{
                         top: ROW_TOPS[startIdx],
                         height: bottom - ROW_TOPS[startIdx],
-                        left: colLeft(di),
-                        width: COL_WIDTH,
+                        left: colLeftFor(di),
+                        width: colW,
                       }}
                     >
                       <div
@@ -529,7 +721,160 @@ function TimetableGrid({
         classId={classId}
         canEdit={canEdit}
       />
+
+      <ArchivesDialog
+        open={archivesOpen}
+        onOpenChange={setArchivesOpen}
+        currentWeek={week}
+      />
     </>
+  );
+}
+
+// ---------- Archives : fiches des semaines passées ----------
+
+/** Lundi ("YYYY-MM-DD") de la semaine décalée de `offset` par rapport à
+ *  aujourd'hui (heure locale). */
+function mondayForOffset(offset: number): string {
+  const n = new Date();
+  const localMonday = new Date(n);
+  localMonday.setDate(n.getDate() - ((n.getDay() + 6) % 7) + offset * 7);
+  const p = (v: number) => `${v}`.padStart(2, "0");
+  return `${localMonday.getFullYear()}-${p(localMonday.getMonth() + 1)}-${p(localMonday.getDate())}`;
+}
+
+function ArchivesDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentWeek?: "A" | "B";
+}) {
+  const fiches = useQuery(
+    api.app.listClassFiles,
+    open ? {} : "skip",
+  ) as ArchivedFile[] | undefined;
+
+  // Semaines passées : les 12 dernières (hors semaine courante), la plus
+  // récente en premier.
+  const pastWeeks = useMemo(() => {
+    const out: Array<{ monday: string; offset: number; label: string }> = [];
+    for (let i = 1; i <= 12; i++) {
+      const monday = mondayForOffset(-i);
+      const end = new Date(monday + "T00:00:00");
+      end.setDate(end.getDate() + 4); // vendredi
+      const fmt = (d: Date) =>
+        d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+      out.push({
+        monday,
+        offset: -i,
+        label: `${fmt(end)}`,
+      });
+    }
+    return out;
+  }, []);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarDays className="size-4 text-primary" /> Fiches des semaines
+            passées
+          </DialogTitle>
+          <DialogDescription>
+            Choisissez une semaine passée pour revoir les fiches publiées
+            pendant celle-ci.
+          </DialogDescription>
+        </DialogHeader>
+        {!fiches ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {pastWeeks.map(({ monday, offset, label }) => {
+              const start = new Date(monday + "T00:00:00");
+              const end = new Date(start);
+              end.setDate(end.getDate() + 4);
+              const range = `du ${start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} au ${end.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`;
+              const weekFiles = fiches.filter(
+                (f) =>
+                  f.createdAt >= start.getTime() &&
+                  f.createdAt < end.getTime() + 24 * 3600 * 1000,
+              );
+              return (
+                <details
+                  key={monday}
+                  className="group rounded-xl border border-border/70 bg-secondary/30"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-medium hover:bg-secondary/50">
+                    <span>
+                      Semaine du {range}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        (−{Math.abs(offset)} sem. · jusqu'au {label})
+                      </span>
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px]",
+                        weekFiles.length === 0 && "opacity-50",
+                      )}
+                    >
+                      {weekFiles.length} fiche{weekFiles.length > 1 ? "s" : ""}
+                    </Badge>
+                  </summary>
+                  <div className="space-y-1.5 px-4 pb-3">
+                    {weekFiles.length === 0 ? (
+                      <p className="py-2 text-xs text-muted-foreground">
+                        Aucune fiche publiée cette semaine-là.
+                      </p>
+                    ) : (
+                      weekFiles
+                        .slice()
+                        .sort((a, b) => b.createdAt - a.createdAt)
+                        .map((f) => (
+                          <div
+                            key={f._id}
+                            className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/60 px-3 py-2"
+                          >
+                            <span
+                              className={cn(
+                                "size-2 rounded-full shrink-0",
+                                f.kind === "devoir"
+                                  ? "bg-primary"
+                                  : "bg-muted-foreground/60",
+                              )}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {f.title}
+                              </p>
+                              <p className="truncate text-[10px] text-muted-foreground">
+                                {f.subject} · {f.day} {f.start}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] uppercase"
+                            >
+                              {f.kind}
+                            </Badge>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

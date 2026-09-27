@@ -1065,6 +1065,29 @@ export const listMySlots = query({
   },
 });
 
+/** Vue neutre d'un créneau (sans filtrage par options/groupe) — sert à
+ *  l'exploration des semaines passées/suivantes depuis l'EDT. L'utilisateur
+ *  doit appartenir à une classe. */
+export const listMySlotsForWeek = query({
+  args: { week: weekTypeValidator },
+  handler: async (ctx, { week }) => {
+    const user = await requireUser(ctx);
+    if (!user.classId) return [];
+    const rows = await ctx.db
+      .query("timetableSlots")
+      .withIndex("by_class", (q) => q.eq("classId", user.classId!))
+      .collect();
+    const filtered = rows.filter((s) => {
+      const wt = s.weekType ?? "AB";
+      return wt === "AB" || wt === week;
+    });
+    filtered.sort(
+      (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
+    );
+    return filtered.map(slotView);
+  },
+});
+
 export const upsertSlot = mutation({
   args: {
     slotId: v.optional(v.id("timetableSlots")),
