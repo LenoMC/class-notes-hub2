@@ -1468,7 +1468,7 @@ function EditSlotDialog({
   );
 }
 
-// ---------- Groupes du vendredi (responsable de classe) ----------
+// ---------- Groupes de la classe (responsable de classe) ----------
 
 function FridayGroupsCard() {
   const { user } = useAuth();
@@ -1512,7 +1512,7 @@ function FridayGroupsCard() {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Users2 className="size-5 text-primary" /> Groupes du vendredi
+              <Users2 className="size-5 text-primary" /> Groupes de la classe
             </CardTitle>
             <CardDescription>
               Répartissez les élèves en deux groupes. Un cours peut aussi être

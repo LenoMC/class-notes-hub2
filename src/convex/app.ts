@@ -1043,7 +1043,8 @@ export const listMySlots = query({
       if (opt && !user.isAdmin && !myOptions.includes(opt)) {
         return false;
       }
-      // Vendredi : si un groupe est assigné, seuls ses créneaux s'affichent
+      // Si un groupe est assigné au créneau, seuls ses élèves le voient
+      // (fonctionne pour n'importe quel jour, pas seulement le vendredi).
       if (s.group && user.group && s.group !== user.group) return false;
       return true;
     });
@@ -1376,7 +1377,7 @@ export const listUsers = query({
 });
 
 /** Membres de la classe du responsable (ou de la classe désignée pour un
- *  admin global) — sert à la gestion des Groupes 1/2 du vendredi. */
+ *  admin global) — sert à la gestion des Groupes 1/2 de la classe. */
 export const listMyClassMembers = query({
   args: {},
   handler: async (ctx) => {
@@ -1404,7 +1405,7 @@ export const listMyClassMembers = query({
   },
 });
 
-/** Attribution d'un élève au Groupe 1 ou Groupe 2 (vendredi) — réservé au
+/** Attribution d'un élève au Groupe 1 ou Groupe 2 — réservé au
  *  responsable de sa classe et aux administrateurs globaux. */
 export const setUserGroup = mutation({
   args: {

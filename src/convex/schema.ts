@@ -75,7 +75,7 @@ const schema = defineSchema(
       classId: v.optional(v.id("classes")),
       adminOfClassId: v.optional(v.id("classes")), // classe dont il est responsable
       options: v.optional(v.array(optionValidator)), // options choisies (1 à 4)
-      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // groupe du vendredi
+      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // groupe de l'élève
       questionnaireDone: v.optional(v.boolean()),
       phone: v.optional(v.string()), // téléphone E.164 (+33...) pour les SMS admins
       discordId: v.optional(v.string()), // ID Discord pour les MPs du bot
@@ -99,7 +99,7 @@ const schema = defineSchema(
       teacher: v.optional(v.string()),
       room: v.optional(v.string()),
       weekType: v.optional(weekTypeValidator), // A, B ou AB (défaut : AB)
-      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau spécial groupe (vendredi)
+      group: v.optional(v.union(v.literal("G1"), v.literal("G2"))), // créneau réservé à un groupe
       color: v.optional(v.string()), // couleur de la case (hex), sinon couleur de la matière
       cancelled: v.optional(v.boolean()), // cours annulé par un admin
       cancellationReason: v.optional(v.string()),
