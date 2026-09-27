@@ -28,6 +28,7 @@ import {
   GraduationCap,
   Hourglass,
   MessagesSquare,
+  Paperclip,
   Send,
   Shield,
   ShieldCheck,
@@ -659,6 +660,14 @@ type QuickMessage = {
   authorId: string;
   mine: boolean;
   imageId: string | null;
+  fiche: null | {
+    _id: string;
+    title: string;
+    kind: "cours" | "devoir";
+    hasFile: boolean;
+    storageId: string | null;
+    externalUrl: string | null;
+  };
 };
 
 function timeShort(ts: number) {
@@ -755,9 +764,21 @@ function ChatQuick({ user }: { user: Me }) {
                       {names.get(m.authorId) ?? "Membre"}
                     </p>
                   )}
-                  <p className="whitespace-pre-wrap line-clamp-2">
-                    {m.text || (m.imageId ? "📷 Image" : "(fiche jointe)")}
-                  </p>
+                  {m.imageId && <QuickImage imageId={m.imageId} />}
+                  {m.fiche && (
+                    <p className="flex items-center gap-1.5 text-xs font-medium">
+                      <Paperclip className="size-3 shrink-0" />
+                      <span className="truncate">
+                        {m.fiche.title}
+                      </span>
+                      <Badge variant="outline" className="text-[9px] uppercase shrink-0">
+                        {m.fiche.kind}
+                      </Badge>
+                    </p>
+                  )}
+                  {m.text && (
+                    <p className="whitespace-pre-wrap line-clamp-2">{m.text}</p>
+                  )}
                   <p
                     className={cn(
                       "text-[10px]",
@@ -801,6 +822,28 @@ function ChatQuick({ user }: { user: Me }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ---------- Aperçu image d'un message (vignette réelle) ----------
+
+function QuickImage({ imageId }: { imageId: string }) {
+  const url = useQuery(
+    api.app.getFileUrl,
+    { storageId: imageId as Id<"_storage"> },
+  );
+  if (!url) {
+    return <div className="h-24 w-40 animate-pulse rounded-xl bg-muted" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="block">
+      <img
+        src={url}
+        alt="Image partagée dans le chat"
+        className="max-h-40 max-w-[13rem] w-auto rounded-xl object-cover"
+        loading="lazy"
+      />
+    </a>
   );
 }
 

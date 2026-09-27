@@ -174,7 +174,7 @@ export default function Landing() {
                 <span className="text-foreground">DM n°3 — chapitre 4</span>
               </p>
               <p className="text-muted-foreground">statut: publié · 1 fichier · pdf</p>
-              <p className="mt-2 text-muted-foreground">$ coursflow open "DM n°3"</p>
+              <p className="mt-2 text-muted-foreground">$ classheure open "DM n°3"</p>
               <p className="text-foreground">→ téléchargement prêt</p>
             </div>
           </div>

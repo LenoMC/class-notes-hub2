@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
+  BarChart3,
   CalendarDays,
+  CircleDot,
   FolderOpen,
   LayoutDashboard,
   Menu,
@@ -21,6 +23,8 @@ const NAV_ITEMS = [
   { to: "/edt", label: "EDT", icon: CalendarDays },
   { to: "/fiches", label: "Fiches", icon: FolderOpen },
   { to: "/chat", label: "Chat", icon: MessagesSquare },
+  { to: "/forum", label: "Forum", icon: CircleDot },
+  { to: "/sondages", label: "Sondages", icon: BarChart3 },
 ];
 
 export function AppShell({

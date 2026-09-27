@@ -262,8 +262,8 @@ export default function Timetable() {
       setSelected(null);
       setEditingSlotId(id);
     };
-    window.addEventListener("coursflow:edit-slot", handler);
-    return () => window.removeEventListener("coursflow:edit-slot", handler);
+    window.addEventListener("classheure:edit-slot", handler);
+    return () => window.removeEventListener("classheure:edit-slot", handler);
   }, []);
 
   if (!user) return null;
@@ -1188,7 +1188,7 @@ function SlotDialog({
               className="w-full"
               onClick={() => {
                 window.dispatchEvent(
-                  new CustomEvent("coursflow:edit-slot", { detail: slot._id }),
+                  new CustomEvent("classheure:edit-slot", { detail: slot._id }),
                 );
               }}
             >

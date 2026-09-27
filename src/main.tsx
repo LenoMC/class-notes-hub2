@@ -15,6 +15,8 @@ const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Timetable = lazy(() => import("./pages/Timetable.tsx"));
 const Fiches = lazy(() => import("./pages/Fiches.tsx"));
 const Chat = lazy(() => import("./pages/Chat.tsx"));
+const Forum = lazy(() => import("./pages/Forum.tsx"));
+const Sondages = lazy(() => import("./pages/Sondages.tsx"));
 const Admin = lazy(() => import("./pages/Admin.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
@@ -163,6 +165,22 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Chat />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/forum"
+                element={
+                  <RequireAuth>
+                    <Forum />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/sondages"
+                element={
+                  <RequireAuth>
+                    <Sondages />
                   </RequireAuth>
                 }
               />

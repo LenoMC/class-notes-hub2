@@ -83,6 +83,55 @@ const schema = defineSchema(
       .index("email", ["email"]) // index for the email. do not remove or modify
       .index("by_class", ["classId"]),
 
+    // Forum : questions posées par les élèves, réponses et votes
+    forumThreads: defineTable({
+      classId: v.id("classes"),
+      authorId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      subject: v.optional(v.string()), // matière du cours concerné (facultatif)
+      resolved: v.optional(v.boolean()),
+      resolvedById: v.optional(v.id("users")), // qui a marqué résolu
+      resolvedAt: v.optional(v.number()),
+      answerCount: v.optional(v.number()), // dénormalisé pour trier sans calculer
+      createdAt: v.number(),
+    })
+      .index("by_class", ["classId"])
+      .index("by_class_created", ["classId", "createdAt"]),
+
+    forumPosts: defineTable({
+      threadId: v.id("forumThreads"),
+      authorId: v.id("users"),
+      body: v.string(),
+      createdAt: v.number(),
+    }).index("by_thread", ["threadId"]),
+
+    // Un vote (upvote) par utilisateur et par question
+    forumVotes: defineTable({
+      threadId: v.id("forumThreads"),
+      userId: v.id("users"),
+    }).index("by_thread", ["threadId"]).index("by_thread_user", ["threadId", "userId"]),
+
+    // Sondages créés par les admins globaux et responsables de classe
+    polls: defineTable({
+      classId: v.id("classes"),
+      authorId: v.id("users"),
+      question: v.string(),
+      options: v.array(v.string()), // 2 à 6 choix
+      closed: v.optional(v.boolean()),
+      closedAt: v.optional(v.number()),
+      createdAt: v.number(),
+    }).index("by_class", ["classId"]),
+
+    // Un vote par utilisateur et par sondage
+    pollVotes: defineTable({
+      pollId: v.id("polls"),
+      userId: v.id("users"),
+      choice: v.number(), // index de l'option choisie
+    })
+      .index("by_poll", ["pollId"])
+      .index("by_poll_user", ["pollId", "userId"]),
+
     // Codes de réinitialisation de mot de passe envoyés par SMS (comptes téléphone)
     phoneResetCodes: defineTable({
       phone: v.string(), // numéro E.164 du compte concerné (+33...)
