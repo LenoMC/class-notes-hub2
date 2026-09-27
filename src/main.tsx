@@ -84,7 +84,13 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+// URL du backend Convex : injectée à la compilation dans le sandbox
+// (VITE_CONVEX_URL). Sur Netlify elle peut être absente au build — on
+// retombe alors sur le déploiement où vivent les données de l'app.
+const convexUrl =
+  (import.meta.env.VITE_CONVEX_URL as string | undefined) ||
+  "https://effervescent-seahorse-172.eu-west-1.convex.cloud";
+const convex = new ConvexReactClient(convexUrl);
 
 
 
