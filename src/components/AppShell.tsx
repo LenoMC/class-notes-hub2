@@ -123,11 +123,11 @@ export function AppShell({
               type="button"
               onClick={() => navigate("/dashboard")}
               className="flex items-center gap-2 cursor-pointer shrink-0"
-              aria-label="Accueil Recoursy"
+              aria-label="Accueil Classheure"
             >
-              <img src="/logo.svg" alt="Recoursy" className="size-8 rounded-lg" />
+              <img src="/logo.svg" alt="Classheure" className="size-8 rounded-lg" />
               <span className="font-bold tracking-wide hidden sm:inline">
-                Recoursy
+                Classheure
               </span>
             </button>
 
@@ -207,7 +207,7 @@ export function AppShell({
         {children}
       </main>
       <footer className="border-t border-border/60 py-4 text-center text-xs text-muted-foreground">
-        Recoursy — votre classe, documentée.
+        Classheure — votre classe, documentée.
       </footer>
     </div>
   );

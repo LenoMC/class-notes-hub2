@@ -203,7 +203,7 @@ export const sendApprovalEmails = action({
     // URL publique du SITE (pas du backend Convex !). À définir via
     // `bunx convex env set PUBLIC_SITE_URL https://votre-site.fr`.
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const subject = `Recoursy — nouvelle demande d'accès à approuver (${userName})`;
+    const subject = `Classheure — nouvelle demande d'accès à approuver (${userName})`;
     // Email HTML propre via Resend (RESEND_API_KEY). Fallback : console.
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
@@ -215,7 +215,7 @@ export const sendApprovalEmails = action({
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Recoursy — Nouvelle demande d'accès</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Nouvelle demande d'accès</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
@@ -229,7 +229,7 @@ export const sendApprovalEmails = action({
               : `<p style="margin:0 0 8px;font-size:14px">Ouvrez l'administration du site (onglet « Approbations ») pour examiner la preuve.</p>`
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de Recoursy.
+            Vous recevez cet email car vous êtes administrateur global de Classheure.
           </p>
         </div>
       </div>`;
@@ -237,7 +237,7 @@ export const sendApprovalEmails = action({
       await axios.post(
         "https://api.resend.com/emails",
         {
-          from: "Recoursy <onboarding@resend.dev>",
+          from: "Classheure <onboarding@resend.dev>",
           to,
           subject,
           html,
@@ -276,7 +276,7 @@ export const sendApprovalSms = action({
       return;
     }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const text = `Recoursy : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
+    const text = `Classheure : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
     for (const phone of phones) {
       try {
         const res = await axios.post(
@@ -319,7 +319,7 @@ export const testSms = action({
     try {
       const res = await axios.post(
         `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
-        { recipients: [phone], message: "Test Recoursy ✓" },
+        { recipients: [phone], message: "Test Classheure ✓" },
         {
           headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
           validateStatus: () => true,
@@ -358,14 +358,11 @@ export const sendApprovalDiscordDm = action({
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
     };
-    // Embed aux couleurs de Recoursy, avec le logo du site
+    // Embed aux couleurs de Classheure
     const embed = {
       title: "Nouvelle demande d'accès",
       description: `**${userName}** (${userEmail}) a envoyé une capture d'écran de preuve (Arsene76) et attend votre approbation.`,
       color: 0x4c6ef5,
-      thumbnail: {
-        url: siteUrl ? `${siteUrl}/logo.svg` : undefined,
-      },
       fields: [
         {
           name: "Utilisateur",
@@ -377,15 +374,10 @@ export const sendApprovalDiscordDm = action({
           value: "⏳ En attente d'examen",
           inline: true,
         },
-        {
-          name: "Preuve",
-          value: "Capture d'écran Arsene76",
-          inline: true,
-        },
       ],
       ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
       footer: {
-        text: "Recoursy — votre classe, documentée",
+        text: "Classheure — votre classe, documentée",
         ...(siteUrl ? { icon_url: `${siteUrl}/logo.svg` } : {}),
       },
       timestamp: new Date().toISOString(),
@@ -462,14 +454,14 @@ export const testDiscord = action({
       const msg = await axios.post(
         `https://discord.com/api/v10/channels/${ch.data.id}/messages`,
         {
-          content: "Test Recoursy ✓",
+          content: "Test Classheure ✓",
           embeds: [
             {
-              title: "Notifications Recoursy activées",
+              title: "Notifications Classheure activées",
               description:
                 "Vous recevrez ici les nouvelles demandes d'accès à approuver.",
               color: 0x4c6ef5,
-              footer: { text: "Recoursy — votre classe, documentée" },
+              footer: { text: "Classheure — votre classe, documentée" },
               timestamp: new Date().toISOString(),
             },
           ],

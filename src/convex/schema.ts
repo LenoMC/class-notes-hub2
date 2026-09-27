@@ -69,7 +69,7 @@ const schema = defineSchema(
 
       role: v.optional(roleValidator), // role of the user. do not remove
 
-      // Champs applicatif Recoursy
+      // Champs applicatif Classheure
       isAdmin: v.optional(v.boolean()), // administrateur global du site
       isClassAdmin: v.optional(v.boolean()), // responsable (admin) de sa classe
       classId: v.optional(v.id("classes")),
