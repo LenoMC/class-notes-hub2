@@ -101,6 +101,8 @@ type Slot = {
   exceptions?: SlotException[];
   // Transitoire : ce cours affiché est un remplacement valable ce jour uniquement
   replacedToday?: boolean;
+  // Transitoire : ce cours est annulé ponctuellement (cette date uniquement)
+  cancelledToday?: boolean;
 };
 
 /** L'exception ponctuelle qui s'applique à ce créneau à la date donnée. */
@@ -452,8 +454,17 @@ function TimetableGrid({
             cancellationReason: undefined,
             replacedToday: true,
           });
+        } else {
+          // kind === "cancelled" : le cours reste affiché, barré, avec un
+          // marquage « annulé » limité à cette date (les autres semaines, il
+          // redevient normal).
+          arr.push({
+            ...s,
+            cancelled: false,
+            cancellationReason: exc.reason ?? undefined,
+            cancelledToday: true,
+          });
         }
-        // kind === "cancelled" : le cours d'origine ne s'affiche pas
         continue;
       }
       arr.push(s);
@@ -991,12 +1002,13 @@ function CourseBox({
   onEdit: (slot: Slot) => void;
 }) {
   const eps = isEpsSubject(slot.subject);
+  const gone = !!slot.cancelled || !!slot.cancelledToday;
   return (
     <div
       style={slotStyle(slot.subject, slot.color)}
       className={cn(
         "relative flex flex-col justify-center rounded-lg border px-2.5 py-2 overflow-hidden shadow-sm",
-        slot.cancelled && "line-through decoration-destructive/70",
+        gone && "line-through decoration-destructive/70",
         !eps &&
           "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:brightness-110",
         eps && "cursor-default",
@@ -1013,9 +1025,14 @@ function CourseBox({
       }
     >
       <p className="text-[13px] font-bold leading-tight truncate">
-        {slot.cancelled && <Ban className="inline size-3 mr-1 text-destructive" />}
+        {gone && <Ban className="inline size-3 mr-1 text-destructive" />}
         {slot.subject}
       </p>
+      {slot.cancelledToday && (
+        <p className="text-[9px] font-bold uppercase tracking-wide text-destructive leading-none">
+          annulé ce jour
+        </p>
+      )}
       {slot.teacher && (
         <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90 truncate">
           <UserRound className="size-2.5 shrink-0" />
