@@ -38,7 +38,13 @@ import {
   periodLabel,
   periodsForDay,
 } from "@/lib/periods";
-import { formatDayFr, weekLabelFor } from "@/lib/weeks";
+import {
+  computeWeekState,
+  dayToUTC,
+  formatDayFr,
+  mondayOfUTC,
+  utcToDay,
+} from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
   Ban,
@@ -189,28 +195,46 @@ export default function Timetable() {
   const [weekOffset, setWeekOffset] = useState(0);
 
   const weekState = useQuery(api.app.weekState) as WeekState | undefined;
+  // Calendrier (ancre + vacances) : sert à calculer le type (A/B/vacances)
+  // des semaines explorées passées ou futures.
+  const calendar = useQuery(api.app.weekCalendar) as
+    | {
+        anchor: string | null;
+        holidays: { label: string; startDay: string; endDay: string }[];
+      }
+    | undefined;
+
+  // Type (A ou B) de la semaine explorée, calculé côté client à partir de
+  // l'ancre et des vacances — weekOffset 0 = semaine actuelle (backend).
+  const exploreWeek: "A" | "B" | null = useMemo(() => {
+    if (weekOffset === 0 || !calendar) return null;
+    const n = new Date();
+    const localMonday = new Date(n);
+    localMonday.setDate(n.getDate() - ((n.getDay() + 6) % 7) + weekOffset * 7);
+    const monday = utcToDay(
+      mondayOfUTC(
+        dayToUTC(
+          `${localMonday.getFullYear()}-${String(localMonday.getMonth() + 1).padStart(2, "0")}-${String(localMonday.getDate()).padStart(2, "0")}`,
+        ),
+      ),
+    );
+    // Semaine bloquée par des vacances ? -> pas d'alternance, grille vide.
+    const mondayInHoliday = calendar.holidays.some(
+      (h) => monday >= h.startDay && monday <= h.endDay,
+    );
+    if (mondayInHoliday) return null;
+    return computeWeekState(monday, calendar.anchor, calendar.holidays).week;
+  }, [weekOffset, calendar]);
+
   const slots = useQuery(
     api.app.listMySlots,
-    // Semaine actuelle : filtration personnalisée (options + groupe).
-    weekOffset === 0 ? { week: weekState?.week ?? "A" } : "skip",
+    // Le même filtrage (options + groupe) est appliqué pour toutes les
+    // semaines : seule la lettre A/B change selon la semaine explorée.
+    weekOffset === 0 || !exploreWeek
+      ? { week: weekState?.week ?? "A" }
+      : { week: exploreWeek },
   ) ?? [];
-  // Semaine explorée (suivante ou passée) : vue neutre sans personnalisation.
-  const exploreSlots = useQuery(
-    api.app.listMySlotsForWeek,
-    weekOffset === 0 || !user?.classId ? "skip" : { week: "A" },
-  ) ?? [];
-  const exploreSlotsB = useQuery(
-    api.app.listMySlotsForWeek,
-    weekOffset === 0 || !user?.classId ? "skip" : { week: "B" },
-  ) ?? [];
-  const displayedSlots = weekOffset === 0 ? slots : [...exploreSlots, ...exploreSlotsB];
   const [selected, setSelected] = useState<Slot | null>(null);
-
-  useEffect(() => {
-    if (!selectedSlotId) return;
-    const found = displayedSlots.find((s) => s._id === selectedSlotId);
-    if (found) setSelected(found);
-  }, [selectedSlotId, displayedSlots]);
 
   const openSlot = (slot: Slot) => {
     if (weekOffset !== 0) {
@@ -241,6 +265,8 @@ export default function Timetable() {
 
   if (!user) return null;
 
+  const displayedSlots = slots as Slot[];
+
   return (
     <AppShell isAdmin={user.isAdmin}>
       {!user.classId ? (
@@ -255,7 +281,7 @@ export default function Timetable() {
         </Card>
       ) : (
         <TimetableGrid
-          slots={displayedSlots as Slot[]}
+          slots={displayedSlots}
           onOpen={openSlot}
           onEdit={(slot) => setEditingSlotId(slot._id)}
           isClassAdmin={user.isClassAdmin}
@@ -264,6 +290,7 @@ export default function Timetable() {
           weekState={weekState}
           weekOffset={weekOffset}
           onWeekOffset={setWeekOffset}
+          exploreWeek={exploreWeek}
         />
       )}
 
@@ -306,6 +333,7 @@ function TimetableGrid({
   weekState,
   weekOffset,
   onWeekOffset,
+  exploreWeek,
 }: {
   slots: Slot[];
   onOpen: (slot: Slot) => void;
@@ -316,6 +344,7 @@ function TimetableGrid({
   weekState: WeekState | undefined;
   weekOffset: number;
   onWeekOffset: (offset: number) => void;
+  exploreWeek: "A" | "B" | null;
 }) {
   const canEdit = isAdmin || isClassAdmin;
   const [showAdd, setShowAdd] = useState(false);
@@ -428,8 +457,9 @@ function TimetableGrid({
                 : "border-primary/50 text-primary",
             )}
           >
-            Semaine {weekState?.isHoliday && weekOffset === 0 ? "— vacances" : week || "…"}
-            {exploring ? " (aperçu)" : " (actuelle)"}
+            {exploring
+              ? `Semaine ${exploreWeek ?? "— vacances"} (aperçu)`
+              : `Semaine ${weekState?.isHoliday ? "— vacances" : week || "…"} (actuelle)`}
           </Badge>
           <Button
             variant="outline"
@@ -455,9 +485,10 @@ function TimetableGrid({
 
       {exploring && (
         <p className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2.5 text-xs text-amber-200">
-          Aperçu d'une semaine {week} possible — cours affichés sans filtrage de vos
-          options/groupes, documents en lecture seule. Cliquez sur « Actuelle »
-          pour revenir.
+          {exploreWeek === null
+            ? "Vacances cette semaine-là — aucune alternance A/B, grille vide."
+            : `Aperçu de la semaine ${exploreWeek} de cette période — mêmes filtres (options/groupe) que d'habitude, documents en lecture seule.`}{" "}
+          Cliquez sur « Actuelle » pour revenir.
         </p>
       )}
 
