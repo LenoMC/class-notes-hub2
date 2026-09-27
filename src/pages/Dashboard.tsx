@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/components/AppShell";
 import { api } from "@/convex/_generated/api";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { optionRuleError, subjectStyle } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
+  ArrowUpRight,
   BookOpen,
   CalendarDays,
   CalendarOff,
@@ -25,6 +27,8 @@ import {
   ExternalLink,
   GraduationCap,
   Hourglass,
+  MessagesSquare,
+  Send,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -104,8 +108,11 @@ export default function Dashboard() {
             <HomeHeader user={user} todayName={todayName} weekState={weekState} />
             <TodaySchedule user={user} todayName={todayName} weekState={weekState} />
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <RecentFiles files={classFiles} />
-              <AdminsCard admins={admins} />
+              <ChatQuick user={user} />
+              <div className="space-y-6">
+                <RecentFiles files={classFiles} />
+                <AdminsCard admins={admins} />
+              </div>
             </div>
           </>
         )
@@ -637,6 +644,159 @@ function TodaySchedule({
           <p className="text-sm text-muted-foreground">
             Aucune classe sélectionnée. Complétez le questionnaire ci-dessus.
           </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------- Accès rapide au chat ----------
+
+type QuickMessage = {
+  _id: string;
+  text: string;
+  createdAt: number;
+  authorId: string;
+  mine: boolean;
+};
+
+function timeShort(ts: number) {
+  return new Date(ts).toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ChatQuick({ user }: { user: Me }) {
+  const messages = useQuery(api.app.listChatMessages, { limit: 4 }) as
+    | QuickMessage[]
+    | undefined;
+  const members = useQuery(api.app.listChatMembers) as
+    | Array<{
+        _id: string;
+        name: string | null;
+        email: string | null;
+        isMe: boolean;
+      }>
+    | undefined;
+  const sendMessage = useMutation(api.app.sendChatMessage);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const names = new Map<string, string>();
+  if (members) {
+    for (const m of members) {
+      names.set(m._id, m.name || m.email || "Membre");
+    }
+  }
+
+  const noClass = !user.classId && !user.adminOfClassId;
+
+  const handleSend = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await sendMessage({ text });
+      setDraft("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Envoi impossible");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card className="panel flex flex-col border-border/70 overflow-hidden">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <MessagesSquare className="size-5 text-primary" /> Chat de classe
+          </CardTitle>
+          <Button asChild variant="ghost" size="sm" className="gap-1 text-xs">
+            <Link to="/chat">
+              Ouvrir <ArrowUpRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+        <CardDescription>
+          Les derniers messages en direct — répondez sans quitter l'accueil.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-3">
+        {noClass ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Rejoignez une classe pour accéder au chat.
+          </p>
+        ) : !messages ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-3/4" />
+            <Skeleton className="ml-auto h-10 w-1/2" />
+          </div>
+        ) : messages.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Aucun message pour l'instant. Lancez la discussion !
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {messages.map((m) => (
+              <div key={m._id} className={cn("flex", m.mine && "justify-end")}>
+                <div
+                  className={cn(
+                    "max-w-[80%] space-y-0.5 rounded-3xl px-3.5 py-2 text-sm leading-snug",
+                    m.mine
+                      ? "rounded-br-sm bg-primary text-primary-foreground"
+                      : "rounded-bl-sm border border-border bg-secondary",
+                  )}
+                >
+                  {!m.mine && (
+                    <p className="text-[10px] font-semibold text-primary">
+                      {names.get(m.authorId) ?? "Membre"}
+                    </p>
+                  )}
+                  <p className="whitespace-pre-wrap line-clamp-2">
+                    {m.text || "(fiche jointe)"}
+                  </p>
+                  <p
+                    className={cn(
+                      "text-[10px]",
+                      m.mine
+                        ? "text-primary-foreground/70"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {timeShort(m.createdAt)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!noClass && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            className="mt-auto flex items-center gap-2"
+          >
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Répondre au chat…"
+              maxLength={1000}
+              className="h-9 flex-1 rounded-full bg-secondary"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!draft.trim() || sending}
+              className="size-9 shrink-0 rounded-full"
+              aria-label="Envoyer"
+            >
+              <Send className="size-4" />
+            </Button>
+          </form>
         )}
       </CardContent>
     </Card>
