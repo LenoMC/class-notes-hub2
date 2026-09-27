@@ -918,6 +918,7 @@ export const listChatMessages = query({
         storageId: Id<"_storage"> | null;
         externalUrl: string | null;
       };
+      imageId: Id<"_storage"> | null;
     }>;
     for (const m of rows.reverse()) {
       let fiche: (typeof enriched)[number]["fiche"] = null;
@@ -941,6 +942,7 @@ export const listChatMessages = query({
         authorId: m.authorId,
         mine: m.authorId === user._id,
         fiche,
+        imageId: m.imageId ?? null,
       });
     }
     return enriched;
@@ -948,16 +950,20 @@ export const listChatMessages = query({
 });
 
 /** Envoi d'un message dans le chat de sa classe (ou classe désignée pour un
- *  admin global sans classe). Une fiche de la classe peut être jointe. */
+ *  admin global sans classe). Une fiche de la classe et/ou une image peuvent
+ *  être jointes. */
 export const sendChatMessage = mutation({
   args: {
     text: v.string(),
     ficheId: v.optional(v.id("courseFiles")),
+    imageId: v.optional(v.id("_storage")),
   },
-  handler: async (ctx, { text, ficheId }) => {
+  handler: async (ctx, { text, ficheId, imageId }) => {
     const user = await requireUser(ctx);
     const trimmed = text.trim();
-    if (!trimmed && !ficheId) throw new Error("Message vide.");
+    if (!trimmed && !ficheId && !imageId) {
+      throw new Error("Message vide.");
+    }
     if (trimmed.length > 1000) {
       throw new Error("Message trop long (1000 caractères maximum).");
     }
@@ -981,6 +987,7 @@ export const sendChatMessage = mutation({
       authorId: user._id,
       text: trimmed,
       ...(ficheId ? { ficheId } : {}),
+      ...(imageId ? { imageId } : {}),
       createdAt: Date.now(),
     });
   },
@@ -996,6 +1003,8 @@ export const deleteChatMessage = mutation({
     if (message.authorId !== user._id && !user.isAdmin) {
       throw new Error("Vous ne pouvez supprimer que vos propres messages.");
     }
+    // Supprime aussi l'image jointe éventuelle
+    if (message.imageId) await ctx.storage.delete(message.imageId);
     await ctx.db.delete(messageId);
   },
 });

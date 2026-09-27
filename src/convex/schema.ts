@@ -139,6 +139,7 @@ const schema = defineSchema(
     authorId: v.id("users"),
     text: v.string(),
     ficheId: v.optional(v.id("courseFiles")), // fiche jointe au message
+    imageId: v.optional(v.id("_storage")), // image jointe au message
     createdAt: v.number(),
   }).index("by_class", ["classId"]),
 

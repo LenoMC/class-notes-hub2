@@ -17,6 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,6 +38,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  ImageIcon,
   MessagesSquare,
   Paperclip,
   Send,
@@ -75,6 +86,7 @@ type ChatMessage = {
     storageId: string | null;
     externalUrl: string | null;
   };
+  imageId: string | null;
 };
 
 type FicheLite = {
@@ -108,6 +120,13 @@ export default function Chat() {
   ) as FicheLite[] | undefined;
   const sendMessage = useMutation(api.app.sendChatMessage);
   const deleteMessage = useMutation(api.app.deleteChatMessage);
+  const generateUploadUrl = useMutation(api.app.generateUploadUrl);
+  const [pendingImage, setPendingImage] = useState<{
+    file: File;
+    preview: string;
+  } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -133,22 +152,55 @@ export default function Chat() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
-    if ((!text && !attached) || sending) return;
+    if ((!text && !attached && !pendingImage) || sending) return;
     setSending(true);
     try {
+      // Upload de l'image éventuelle vers le stockage Convex
+      let imageId: Id<"_storage"> | undefined;
+      if (pendingImage) {
+        setUploading(true);
+        const url = await generateUploadUrl();
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": pendingImage.file.type },
+          body: pendingImage.file,
+        });
+        const uploaded = (await res.json()) as { storageId: string };
+        imageId = uploaded.storageId as Id<"_storage">;
+        setUploading(false);
+      }
       await sendMessage({
         text,
         ficheId: attached
           ? (attached._id as Id<"courseFiles">)
           : undefined,
+        imageId,
       });
       setDraft("");
       setAttached(null);
+      if (pendingImage) {
+        URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage(null);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Envoi impossible");
     } finally {
       setSending(false);
+      setUploading(false);
     }
+  };
+
+  const pickImage = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choisissez un fichier image (PNG, JPG, WebP…).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image trop lourde (5 Mo maximum).");
+      return;
+    }
+    setPendingImage({ file, preview: URL.createObjectURL(file) });
   };
 
   const ficheResults = (fiches ?? []).filter((f) =>
@@ -167,6 +219,11 @@ export default function Chat() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Suppression impossible");
     }
+  };
+
+  const removePendingImage = () => {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+    setPendingImage(null);
   };
 
   const noClass = user && !user.classId && !user.adminOfClassId;
@@ -269,6 +326,7 @@ export default function Chat() {
                             m.text.split("\n").map((line, j) => (
                               <p key={j}>{line}</p>
                             ))}
+                          {m.imageId && <ChatImage imageId={m.imageId} onZoom={setZoomImage} mine={m.mine} />}
                           {m.fiche && (
                             <a
                               href={
@@ -307,8 +365,10 @@ export default function Chat() {
                             type="button"
                             onClick={() => setToDelete(m)}
                             className={cn(
-                              "mx-1 rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100 cursor-pointer",
-                              m.mine && "justify-self-end",
+                              "mx-1 rounded-full p-1 text-muted-foreground transition-opacity hover:bg-destructive/10 hover:text-destructive cursor-pointer",
+                              m.imageId
+                                ? "opacity-60"
+                                : "opacity-0 focus:opacity-100 group-hover:opacity-100",
                             )}
                             aria-label="Supprimer le message"
                           >
@@ -341,10 +401,52 @@ export default function Chat() {
                 </button>
               </div>
             )}
+            {pendingImage && (
+              <div className="mx-3 mt-3 flex items-center gap-2 rounded-2xl border border-border bg-secondary p-2">
+                <img
+                  src={pendingImage.preview}
+                  alt="Aperçu de l'image à envoyer"
+                  className="size-12 rounded-lg object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">
+                    {pendingImage.file.name}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {(pendingImage.file.size / 1024).toFixed(0)} Ko · image jointe
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={removePendingImage}
+                  className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground cursor-pointer"
+                  aria-label="Retirer l'image"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSend}
               className="flex items-center gap-2 border-t border-border/60 p-3"
             >
+              <label
+                htmlFor="chat-image-input"
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+                title="Joindre une image"
+              >
+                <ImageIcon className="size-4" />
+                <input
+                  id="chat-image-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(e) => {
+                    pickImage(e.target.files?.[0] ?? null);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
               <Button
                 type="button"
                 size="icon"
@@ -365,11 +467,11 @@ export default function Chat() {
               <Button
                 type="submit"
                 size="icon"
-                disabled={(!draft.trim() && !attached) || sending}
+                disabled={(!draft.trim() && !attached && !pendingImage) || sending}
                 className="size-10 shrink-0 rounded-full"
                 aria-label="Envoyer"
               >
-                <Send className="size-4" />
+                {uploading ? "…" : <Send className="size-4" />}
               </Button>
             </form>
           </Card>
@@ -410,6 +512,32 @@ export default function Chat() {
           </Card>
         </div>
       )}
+
+      {/* Zoom plein écran d'une image du chat */}
+      <AlertDialog open={!!zoomImage} onOpenChange={(open) => !open && setZoomImage(null)}>
+        <AlertDialogContent className="max-w-4xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="sr-only">Image du chat</AlertDialogTitle>
+            <AlertDialogDescription className="sr-only">
+              Vue agrandie de l'image partagée dans le chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {zoomImage && (
+            <img
+              src={zoomImage}
+              alt="Vue agrandie"
+              className="max-h-[75vh] w-full rounded-xl object-contain"
+            />
+          )}
+          <div className="flex justify-end">
+            <AlertDialogAction asChild>
+              <a href={zoomImage ?? "#"} target="_blank" rel="noreferrer">
+                Ouvrir dans un onglet
+              </a>
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Confirmation de suppression d'un message */}
       <Dialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
@@ -494,6 +622,41 @@ export default function Chat() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+/** Image jointe à un message : URL signée via Convex, zoom au clic. */
+function ChatImage({
+  imageId,
+  onZoom,
+  mine,
+}: {
+  imageId: string;
+  onZoom: (url: string) => void;
+  mine: boolean;
+}) {
+  const url = useQuery(
+    api.app.getFileUrl,
+    { storageId: imageId as Id<"_storage"> },
+  );
+  if (!url) {
+    return (
+      <div className="h-40 w-52 animate-pulse rounded-2xl bg-background/40" />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onZoom(url)}
+      className="block cursor-zoom-in overflow-hidden rounded-2xl border transition-colors"
+    >
+      <img
+        src={url}
+        alt="Image partagée dans le chat"
+        className="max-h-64 max-w-[16rem] w-auto object-cover"
+        loading="lazy"
+      />
+    </button>
   );
 }
 

@@ -658,6 +658,7 @@ type QuickMessage = {
   createdAt: number;
   authorId: string;
   mine: boolean;
+  imageId: string | null;
 };
 
 function timeShort(ts: number) {
@@ -755,7 +756,7 @@ function ChatQuick({ user }: { user: Me }) {
                     </p>
                   )}
                   <p className="whitespace-pre-wrap line-clamp-2">
-                    {m.text || "(fiche jointe)"}
+                    {m.text || (m.imageId ? "📷 Image" : "(fiche jointe)")}
                   </p>
                   <p
                     className={cn(
