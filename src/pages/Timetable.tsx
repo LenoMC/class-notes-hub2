@@ -226,13 +226,16 @@ export default function Timetable() {
     return computeWeekState(monday, calendar.anchor, calendar.holidays).week;
   }, [weekOffset, calendar]);
 
+  // Lettre de la semaine à afficher : actuelle (backend) ou explorée (client).
+  const displayWeek: "A" | "B" | undefined =
+    weekOffset === 0
+      ? (weekState?.week ?? undefined)
+      : (exploreWeek ?? undefined);
+  // Grille filtrée UNIQUEMENT sur la lettre de la semaine affichée : en
+  // vacances (lettre indéterminée) on ne charge rien du tout.
   const slots = useQuery(
     api.app.listMySlots,
-    // Le même filtrage (options + groupe) est appliqué pour toutes les
-    // semaines : seule la lettre A/B change selon la semaine explorée.
-    weekOffset === 0 || !exploreWeek
-      ? { week: weekState?.week ?? "A" }
-      : { week: exploreWeek },
+    user?.classId && displayWeek ? { week: displayWeek } : "skip",
   ) ?? [];
   const [selected, setSelected] = useState<Slot | null>(null);
 
