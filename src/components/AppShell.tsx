@@ -37,6 +37,16 @@ const UNREAD_BY_ROUTE: Record<string, keyof typeof COUNT_ZERO> = {
 };
 const COUNT_ZERO = { chat: 0, forum: 0, sondages: 0 } as const;
 
+/** Point rouge de l'onglet Administration (admins) : demandes d'accès en
+ *  attente + messages privés des élèves non lus. */
+function useAdminBadge(): number {
+  const badges = useQuery(api.app.getAdminBadgeCounts, {}) as
+    | { approvals: number; messages: number }
+    | undefined;
+  if (!badges) return 0;
+  return badges.approvals + badges.messages;
+}
+
 export function AppShell({
   children,
   isAdmin,
@@ -53,6 +63,8 @@ export function AppShell({
   const unread = useQuery(api.app.getUnreadCounts) as
     | { chat: number; forum: number; sondages: number }
     | undefined;
+  // Point rouge Administration : approbations + chat privé (admins uniquement).
+  const adminBadge = useAdminBadge();
 
   const initials = (user?.name || user?.email || "?")
     .split(/[\s.@]+/)
@@ -115,7 +127,17 @@ export function AppShell({
             )
           }
         >
-          <Shield className="size-4" />
+          <span className="relative inline-flex">
+            <Shield className="size-4" />
+            {adminBadge > 0 && (
+              <span
+                className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground shadow"
+                aria-label={`${adminBadge} action(s) en attente`}
+              >
+                {adminBadge > 9 ? "9+" : adminBadge}
+              </span>
+            )}
+          </span>
           Administration
         </NavLink>
       )}

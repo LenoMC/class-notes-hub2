@@ -25,6 +25,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { isEpsSubject, optionRuleError } from "@/lib/subjects";
 import { periodLabel, periodsForDay } from "@/lib/periods";
+import { TypingBubble } from "@/components/TypingDots";
 import {
   dayToUTC,
   monthWeeks,
@@ -35,15 +36,19 @@ import {
 } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
+  ArrowLeft,
   CalendarOff,
   CalendarPlus,
   Check,
   CheckCircle2,
   Clock,
   ExternalLink,
+  Lock,
+  MessageSquareLock,
   Pencil,
   Plus,
   RefreshCw,
+  Send,
   Shield,
   ShieldCheck,
   Trash2,
@@ -52,7 +57,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"] as const;
@@ -90,6 +95,10 @@ export default function Admin() {
     | undefined;
   const pendingCount =
     allRequests?.filter((r) => r.status === "pending").length ?? 0;
+  const adminBadges = useQuery(api.app.getAdminBadgeCounts, {}) as
+    | { approvals: number; messages: number }
+    | undefined;
+  const msgBadge = adminBadges?.messages ?? 0;
 
   if (!user) return null;
   if (!user.isAdmin) {
@@ -134,6 +143,12 @@ export default function Admin() {
           <TabsTrigger value="users" className="gap-1.5">
             <Users className="size-4" /> Utilisateurs
           </TabsTrigger>
+          <TabsTrigger value="adminchat" className="gap-1.5">
+            <MessageSquareLock className="size-4" /> Chat
+            {msgBadge > 0 && (
+              <Badge className="ml-1 h-5 px-1.5 text-[10px]">{msgBadge}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="holidays" className="gap-1.5">
             <CalendarOff className="size-4" /> Vacances & semaines
           </TabsTrigger>
@@ -150,6 +165,9 @@ export default function Admin() {
         </TabsContent>
         <TabsContent value="users">
           <UsersTab />
+        </TabsContent>
+        <TabsContent value="adminchat">
+          <AdminChatTab />
         </TabsContent>
         <TabsContent value="holidays">
           <HolidaysTab />
@@ -1639,6 +1657,266 @@ function HolidaysTab() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// Chat privé : conversations élèves ↔ admins
+// ============================================================================
+
+function AdminChatTab() {
+  const [selected, setSelected] = useState<Id<"users"> | "__self__" | null>(null);
+  const threads = useQuery(api.app.listAdminThreads, {}) as
+    | Array<{
+        studentId: Id<"users">;
+        studentName: string;
+        lastText: string;
+        lastAt: number;
+        unread: number;
+      }>
+    | undefined;
+
+  if (selected === null) {
+    return (
+      <AdminThreadsList
+        threads={threads ?? []}
+        loading={threads === undefined}
+        onOpen={(id) => setSelected(id)}
+      />
+    );
+  }
+  return (
+    <AdminChatThread
+      studentId={selected === "__self__" ? undefined : selected}
+      onBack={() => setSelected(null)}
+    />
+  );
+}
+
+function AdminThreadsList({
+  threads,
+  loading,
+  onOpen,
+}: {
+  threads: Array<{
+    studentId: Id<"users">;
+    studentName: string;
+    lastText: string;
+    lastAt: number;
+    unread: number;
+  }>;
+  loading: boolean;
+  onOpen: (id: Id<"users"> | "__self__") => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => onOpen("__self__")}
+        className="w-full flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-left transition-colors hover:border-primary/60 cursor-pointer"
+      >
+        <span className="flex size-10 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <MessageSquareLock className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">
+            Salon des administrateurs
+          </span>
+          <span className="block text-xs text-muted-foreground truncate">
+            Discussion entre admins (chaque admin a son propre salon privé)
+          </span>
+        </span>
+      </button>
+      <p className="pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Conversations élèves
+      </p>
+      {loading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : threads.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Aucun élève n'a encore écrit. Dès qu'un élève envoie un message dans
+          « Chat 🔒 », sa conversation apparaît ici.
+        </p>
+      ) : (
+        threads.map((t) => (
+          <button
+            key={t.studentId}
+            type="button"
+            onClick={() => onOpen(t.studentId)}
+            className="w-full flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left transition-colors hover:border-primary/50 cursor-pointer"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-bold text-primary">
+              {t.studentName.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-medium">{t.studentName}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {new Date(t.lastAt).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {t.lastText}
+              </span>
+            </span>
+            {t.unread > 0 && (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                {t.unread}
+              </span>
+            )}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
+function AdminChatThread({
+  studentId,
+  onBack,
+}: {
+  studentId: Id<"users"> | undefined; // undefined = salon des admins (moi)
+  onBack: () => void;
+}) {
+  const { user } = useAuth();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messages = useQuery(
+    api.app.listAdminMessages,
+    studentId ? { studentId } : {},
+  ) as
+    | Array<{ _id: string; text: string; createdAt: number; mine: boolean }>
+    | undefined;
+  const send = useMutation(api.app.sendAdminMessage);
+  const markRead = useMutation(api.app.markAdminChatReadAsAdmin);
+  const setTyping = useMutation(api.app.setTyping);
+  // Scope : « admin:<élève> » dans une conversation, sinon salon personnel.
+  const scope = studentId ? `admin:${studentId}` : `admin:${user?._id ?? "?"}`;
+  const typingNames = useQuery(api.app.listTyping, { scope }) as
+    | string[]
+    | undefined;
+  const otherTyping = (typingNames ?? []).length > 0;
+
+  useEffect(() => {
+    if (studentId) void markRead({ studentId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentId]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages?.length]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setSending(true);
+    try {
+      await send({ text, ...(studentId ? { studentId } : {}) });
+      setDraft("");
+      await setTyping({ scope, typing: false });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Envoi impossible.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-secondary/20">
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onBack}
+          aria-label="Retour à la liste"
+        >
+          <ArrowLeft className="size-4" />
+        </Button>
+        <MessageSquareLock className="size-4 text-primary" />
+        <p className="text-sm font-semibold">
+          {studentId ? "Conversation privée" : "Salon des administrateurs"}
+        </p>
+        <Lock className="ml-auto size-3.5 text-muted-foreground" />
+      </div>
+      <div
+        ref={scrollRef}
+        className="max-h-[420px] min-h-[280px] space-y-2 overflow-y-auto px-4 py-3"
+      >
+        {!messages ? (
+          <Skeleton className="h-20 w-full" />
+        ) : messages.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Aucun message pour l'instant. Écrivez le premier !
+          </p>
+        ) : (
+          messages.map((m) => (
+            <div
+              key={m._id}
+              className={cn("flex", m.mine ? "justify-end" : "justify-start")}
+            >
+              <div
+                className={cn(
+                  "max-w-[78%] rounded-2xl px-3.5 py-2 text-sm",
+                  m.mine
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-secondary/80 rounded-bl-sm",
+                )}
+              >
+                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                <p
+                  className={cn(
+                    "mt-0.5 text-[10px]",
+                    m.mine ? "text-primary-foreground/70" : "text-muted-foreground",
+                  )}
+                >
+                  {new Date(m.createdAt).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+        {otherTyping && <TypingBubble />}
+      </div>
+      <form
+        onSubmit={handleSend}
+        className="flex items-center gap-2 border-t border-border/60 px-3 py-2.5"
+      >
+        <Input
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            void setTyping({ scope, typing: e.target.value.length > 0 });
+          }}
+          onBlur={() => void setTyping({ scope, typing: false })}
+          placeholder="Écrire un message…"
+          className="flex-1"
+          maxLength={2000}
+          disabled={sending}
+        />
+        <Button
+          type="submit"
+          size="icon"
+          className="size-9 shrink-0"
+          disabled={sending || !draft.trim()}
+        >
+          {sending ? (
+            <RefreshCw className="size-4 animate-spin" />
+          ) : (
+            <Send className="size-4" />
+          )}
+        </Button>
+      </form>
     </div>
   );
 }

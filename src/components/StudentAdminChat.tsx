@@ -1,0 +1,159 @@
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { Lock, MessageSquareLock, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/convex/_generated/api";
+import { cn } from "@/lib/utils";
+import { TypingBubble } from "@/components/TypingDots";
+
+/** Panneau « Chat 🔒 » côté élève : conversation privée avec les admins
+ *  globaux. Les admins voient automatiquement la conversation apparaître
+ *  dans leur onglet Chat ( Administration → Chat ). */
+export function StudentAdminChatPanel() {
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const messages = useQuery(api.app.listAdminMessages, {}) as
+    | Array<{ _id: string; text: string; createdAt: number; mine: boolean; side: string }>
+    | undefined;
+  const send = useMutation(api.app.sendAdminMessage);
+  const markRead = useMutation(api.app.markAdminChatReadAsStudent);
+  const setTyping = useMutation(api.app.setTyping);
+  const typingNames = useQuery(api.app.listTyping, {
+    scope: "student",
+  }) as string[] | undefined;
+
+  // Ouverture = tout est lu (le point rouge disparaît)
+  useEffect(() => {
+    void markRead({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages?.length]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setSending(true);
+    try {
+      await send({ text });
+      setDraft("");
+      await setTyping({ scope: "student", typing: false });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card className="panel flex flex-col border-border/70 overflow-hidden">
+      <CardHeader className="border-b border-border/60 py-4">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquareLock className="size-4 text-primary" />
+          Chat privé avec les administrateurs
+          <Lock className="ml-auto size-3.5 text-muted-foreground" />
+        </CardTitle>
+        <CardDescription className="flex items-center gap-1.5 text-xs">
+          <ShieldCheck className="size-3.5 text-primary" />
+          Visible uniquement par vous et les administrateurs globaux du site.
+        </CardDescription>
+      </CardHeader>
+
+      <div
+        ref={scrollRef}
+        className="h-[52vh] min-h-[320px] flex-1 space-y-2.5 overflow-y-auto px-4 py-4"
+      >
+        {!messages ? (
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="ml-auto h-10 w-1/2" />
+          </div>
+        ) : messages.length === 0 ? (
+          <p className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Une question, un souci ou une suggestion ? Écrivez aux administrateurs
+            ici — c'est confidentiel.
+          </p>
+        ) : (
+          messages.map((m) => (
+            <div
+              key={m._id}
+              className={cn("flex", m.mine ? "justify-end" : "justify-start")}
+            >
+              <div
+                className={cn(
+                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
+                  m.mine
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-secondary/80 rounded-bl-sm",
+                )}
+              >
+                {!m.mine && (
+                  <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-primary">
+                    <ShieldCheck className="size-3" /> Administrateur
+                  </p>
+                )}
+                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                <p
+                  className={cn(
+                    "mt-0.5 text-[10px]",
+                    m.mine ? "text-primary-foreground/70" : "text-muted-foreground",
+                  )}
+                >
+                  {new Date(m.createdAt).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+        {(typingNames ?? []).length > 0 && (
+          <div className="flex justify-start">
+            <TypingBubble />
+          </div>
+        )}
+      </div>
+
+      <form
+        onSubmit={handleSend}
+        className="flex items-center gap-2 border-t border-border/60 p-3"
+      >
+        <Input
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            void setTyping({ scope: "student", typing: e.target.value.length > 0 });
+          }}
+          onBlur={() => void setTyping({ scope: "student", typing: false })}
+          placeholder="Écrire aux administrateurs…"
+          className="flex-1"
+          maxLength={2000}
+          disabled={sending}
+        />
+        <Button
+          type="submit"
+          size="icon"
+          className="size-10 shrink-0"
+          disabled={sending || !draft.trim()}
+          aria-label="Envoyer"
+        >
+          {sending ? (
+            <RefreshCw className="size-4 animate-spin" />
+          ) : (
+            <Send className="size-4" />
+          )}
+        </Button>
+      </form>
+    </Card>
+  );
+}

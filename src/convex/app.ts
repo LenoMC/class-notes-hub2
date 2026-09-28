@@ -1488,6 +1488,255 @@ export const markSectionRead = mutation({
   },
 });
 
+// ---------- Chat privé élève ↔ admins globaux ----------
+
+function isGlobalAdmin(u: UserDoc): boolean {
+  return !!u.isAdmin;
+}
+
+/** Conversation privée de l'utilisateur courant avec les admins.
+ *  Élève : ses messages avec les admins. Admin : celle d'un élève ciblé
+ *  (via args.studentId) ou la sienne sinon. */
+export const listAdminMessages = query({
+  args: { studentId: v.optional(v.id("users")) },
+  handler: async (ctx, { studentId }) => {
+    const user = await requireUser(ctx);
+    let student = user;
+    if (studentId) {
+      if (!isGlobalAdmin(user)) {
+        throw new Error("Réservé aux administrateurs.");
+      }
+      const target = await ctx.db.get(studentId);
+      if (!target) throw new Error("Élève introuvable.");
+      student = target as UserDoc;
+    }
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student_created", (q) => q.eq("studentId", student._id))
+      .order("asc")
+      .collect();
+    return rows.map((m) => ({
+      _id: m._id,
+      text: m.text,
+      createdAt: m.createdAt,
+      mine: m.authorId === user._id,
+      side: m.authorSide as "student" | "admin",
+    }));
+  },
+});
+
+/** Liste des conversations élèves pour les admins : nom, dernier message,
+ *  non-lus. Seuls les élèves ayant déjà écrit apparaissent. */
+export const listAdminThreads = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) return [];
+    const all = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student")
+      .collect();
+    const byStudent = new Map<string, typeof all>();
+    for (const m of all) {
+      const arr = byStudent.get(m.studentId) ?? [];
+      arr.push(m);
+      byStudent.set(m.studentId, arr);
+    }
+    const threads: Array<{
+      studentId: Id<"users">;
+      studentName: string;
+      lastText: string;
+      lastAt: number;
+      unread: number;
+    }> = [];
+    for (const [sid, msgs] of byStudent) {
+      const sorted = [...msgs].sort((a, b) => b.createdAt - a.createdAt);
+      const last = sorted[0];
+      const student = await ctx.db.get(sid as Id<"users">);
+      threads.push({
+        studentId: sid as Id<"users">,
+        studentName: student?.name ?? "Élève",
+        lastText: last.text,
+        lastAt: last.createdAt,
+        unread: sorted.filter(
+          (m) => m.authorSide === "student" && !m.readByAdmin,
+        ).length,
+      });
+    }
+    return threads.sort((a, b) => b.lastAt - a.lastAt);
+  },
+});
+
+/** Envoie un message privé : l'élève écrit aux admins, l'admin répond dans
+ *  la conversation d'un élève. */
+export const sendAdminMessage = mutation({
+  args: {
+    text: v.string(),
+    studentId: v.optional(v.id("users")), // requis pour les admins
+  },
+  handler: async (ctx, { text, studentId }) => {
+    const user = await requireUser(ctx);
+    const t = text.trim();
+    if (!t) throw new Error("Message vide.");
+    if (t.length > 2000) {
+      throw new Error("Message trop long (2000 caractères maximum).");
+    }
+    let student = user;
+    let side: "student" | "admin" = "student";
+    if (isGlobalAdmin(user)) {
+      if (!studentId) throw new Error("Choisissez un élève dans la liste.");
+      const target = await ctx.db.get(studentId);
+      if (!target) throw new Error("Élève introuvable.");
+      student = target as UserDoc;
+      side = "admin";
+    }
+    const now = Date.now();
+    await ctx.db.insert("adminMessages", {
+      studentId: student._id,
+      authorId: user._id,
+      authorSide: side,
+      text: t,
+      createdAt: now,
+      // Le côté qui envoie a « lu » par définition ; l'autre côté non.
+      readByStudent: side === "student",
+      readByAdmin: side === "admin",
+    });
+    // L'envoi termine la saisie : on retire l'indicateur « ••• écrit ».
+    const scope = side === "student" ? "student" : `admin:${user._id}`;
+    const typingRows = await ctx.db
+      .query("typingStates")
+      .withIndex("by_scope", (q) => q.eq("scope", scope))
+      .collect();
+    for (const r of typingRows) {
+      if (r.userId === user._id) await ctx.db.delete(r._id);
+    }
+    return true;
+  },
+});
+
+/** Élève : ouvre sa conversation privée → tout est marqué lu côté admins. */
+export const markAdminChatReadAsStudent = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student", (q) => q.eq("studentId", user._id))
+      .collect();
+    for (const m of rows) {
+      if (m.authorSide === "admin" && !m.readByStudent) {
+        await ctx.db.patch(m._id, { readByStudent: true });
+      }
+    }
+    return true;
+  },
+});
+
+/** Admin : ouvre la conversation d'un élève → tout est marqué lu côté élève. */
+export const markAdminChatReadAsAdmin = mutation({
+  args: { studentId: v.id("users") },
+  handler: async (ctx, { studentId }) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) throw new Error("Réservé aux administrateurs.");
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student", (q) => q.eq("studentId", studentId))
+      .collect();
+    for (const m of rows) {
+      if (m.authorSide === "student" && !m.readByAdmin) {
+        await ctx.db.patch(m._id, { readByAdmin: true });
+      }
+    }
+    return true;
+  },
+});
+
+// ---------- Indicateur de saisie « ••• écrit » ----------
+
+const TYPING_TTL = 6000; // ms : l'indicateur expire tout seul
+
+export const setTyping = mutation({
+  args: { scope: v.string(), typing: v.boolean() },
+  handler: async (ctx, { scope, typing }) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("typingStates")
+      .withIndex("by_scope", (q) => q.eq("scope", scope))
+      .collect();
+    const mine = rows.find((r) => r.userId === user._id);
+    if (typing) {
+      if (mine) {
+        await ctx.db.patch(mine._id, { updatedAt: Date.now() });
+      } else {
+        await ctx.db.insert("typingStates", {
+          scope,
+          userId: user._id,
+          updatedAt: Date.now(),
+        });
+      }
+    } else if (mine) {
+      await ctx.db.delete(mine._id);
+    }
+    return true;
+  },
+});
+
+/** Noms des personnes en train d'écrire dans le scope (expirées exclues). */
+export const listTyping = query({
+  args: { scope: v.string() },
+  handler: async (ctx, { scope }) => {
+    await requireUser(ctx);
+    const cutoff = Date.now() - TYPING_TTL;
+    const rows = await ctx.db
+      .query("typingStates")
+      .withIndex("by_scope", (q) => q.eq("scope", scope))
+      .collect();
+    const names: string[] = [];
+    for (const r of rows) {
+      if (r.updatedAt < cutoff) continue; // expirée, ignorée
+      const u = await ctx.db.get(r.userId);
+      if (u?.name) names.push(u.name.split(" ")[0]);
+    }
+    return names;
+  },
+});
+
+// ---------- Badges « point rouge » ----------
+
+/** Point rouge de l'onglet Administration (navbar admin) : demandes
+ *  d'accès en attente + messages privés d'élèves non lus. */
+export const getAdminBadgeCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) return { approvals: 0, messages: 0 };
+    const pending = (
+      await ctx.db
+        .query("accessRequests")
+        .withIndex("by_status", (q) => q.eq("status", "pending"))
+        .collect()
+    ).length;
+    const messages = (
+      await ctx.db.query("adminMessages").collect()
+    ).filter((m) => m.authorSide === "student" && !m.readByAdmin).length;
+    return { approvals: pending, messages };
+  },
+});
+
+/** Nombre de réponses admin non lues dans MA conversation privée (élève). */
+export const getMyAdminChatUnread = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student", (q) => q.eq("studentId", user._id))
+      .collect();
+    return rows.filter((m) => m.authorSide === "admin" && !m.readByStudent)
+      .length;
+  },
+});
+
 /** Membres de la classe (affichés à côté du chat). */
 export const listChatMembers = query({
   args: {},

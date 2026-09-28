@@ -33,11 +33,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
+import { StudentAdminChatPanel } from "@/components/StudentAdminChat";
 import { useMutation, useQuery } from "convex/react";
 import {
   Download,
   ExternalLink,
   FileText,
+  MessageSquareLock,
   ImageIcon,
   MessagesSquare,
   Paperclip,
@@ -235,6 +237,12 @@ export default function Chat() {
 
   const noClass = user && !user.classId && !user.adminOfClassId;
 
+  // Onglets : Chat de classe / Chat privé avec les admins (🔒)
+  const [tab, setTab] = useState<"class" | "private">("class");
+  const adminChatUnread = useQuery(api.app.getMyAdminChatUnread, {}) as
+    | number
+    | undefined;
+
   return (
     <AppShell isAdmin={user?.isAdmin}>
       <div className="mb-6 flex items-center gap-3">
@@ -249,7 +257,42 @@ export default function Chat() {
         </div>
       </div>
 
-      {noClass ? (
+      {/* Onglets Chat de classe / Chat privé admins */}
+      <div className="mb-4 grid w-full max-w-md grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+        <button
+          type="button"
+          onClick={() => setTab("class")}
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
+            tab === "class"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <MessagesSquare className="size-4" /> Classe
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("private")}
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
+            tab === "private"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <MessageSquareLock className="size-4" /> Chat 🔒
+          {(adminChatUnread ?? 0) > 0 && (
+            <span className="flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+              {adminChatUnread! > 9 ? "9+" : adminChatUnread}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {tab === "private" ? (
+        <StudentAdminChatPanel />
+      ) : noClass ? (
         <Card className="panel border-border/70">
           <CardContent className="py-12 text-center">
             <MessagesSquare className="mx-auto size-10 text-muted-foreground/50" />

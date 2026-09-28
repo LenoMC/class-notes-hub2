@@ -239,6 +239,28 @@ const schema = defineSchema(
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_user", ["userId"]),
 
+  // Chat privé élève ↔ admins globaux : conversation par élève, les admins
+  // voient la liste de tous ceux qui ont écrit, avec non-lus par conversation.
+  adminMessages: defineTable({
+    studentId: v.id("users"), // l'élève (ou l'admin qui écrit dans sa propre conversation)
+    authorId: v.id("users"), // auteur réel du message (élève ou admin)
+    authorSide: v.union(v.literal("student"), v.literal("admin")),
+    text: v.string(),
+    createdAt: v.number(),
+    readByAdmin: v.optional(v.boolean()), // vu par un admin (côté élèves)
+    readByStudent: v.optional(v.boolean()), // lu par l'élève (côté admins)
+  })
+    .index("by_student", ["studentId"])
+    .index("by_student_created", ["studentId", "createdAt"]),
+
+  // Indicateur de saisie « ••• écrit » : une ligne par utilisateur actif,
+  // auto-expirée (TTL 6 s) côté lecture.
+  typingStates: defineTable({
+    scope: v.string(), // ex. "admin:<userId>" ou "student"
+    userId: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_scope", ["scope"]),
+
   // Dernière visite de chaque utilisateur dans une section (chat/forum/sondages)
   // pour afficher le point rouge « du nouveau ici » dans la navbar.
   readStates: defineTable({
@@ -247,6 +269,8 @@ const schema = defineSchema(
       v.literal("chat"),
       v.literal("forum"),
       v.literal("sondages"),
+      v.literal("admin"),
+      v.literal("adminChat"),
     ),
     lastReadAt: v.number(),
   }).index("by_user_section", ["userId", "section"]),
