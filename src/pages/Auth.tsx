@@ -121,6 +121,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Erreur inline sous le champ email du formulaire d'inscription (domaine inexistant)
+  const [emailCheckError, setEmailCheckError] = useState<string | null>(null);
 
   // Redirection automatique seulement hors flux « mot de passe oublié » :
   // un utilisateur connecté peut venir ici changer son mot de passe.
@@ -144,6 +146,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const switchMethod = (m: Method) => {
     setMethod(m);
     setError(null);
+    setEmailCheckError(null);
     setOtp("");
   };
 
@@ -181,6 +184,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
+    setEmailCheckError(null);
     const fd = new FormData(event.currentTarget);
     const firstName = ((fd.get("firstName") as string) || "").trim();
     const lastName = ((fd.get("lastName") as string) || "").trim();
@@ -198,9 +202,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         // Vérifie que le domaine de l'adresse existe (faute de frappe ?)
         const deliverable = await verifyEmailDeliverable({ email });
         if (!deliverable) {
-          setError(
-            "Cette adresse email semble invalide ou inexistante (le domaine ne reçoit pas d'email). Vérifiez votre saisie.",
-          );
+          // Erreur inline affichée en rouge sous le champ email
+          setEmailCheckError("Cette email n'existe pas");
           setIsLoading(false);
           return;
         }
@@ -507,8 +510,21 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       <Label htmlFor="su-email">Email</Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="su-email" name="email" type="email" placeholder="prenom.nom@exemple.fr" className="pl-9" disabled={isLoading} required />
+                        <Input
+                          id="su-email"
+                          name="email"
+                          type="email"
+                          placeholder="prenom.nom@exemple.fr"
+                          className={`pl-9 ${emailCheckError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                          disabled={isLoading}
+                          required
+                          aria-invalid={!!emailCheckError}
+                          onChange={() => setEmailCheckError(null)}
+                        />
                       </div>
+                      {emailCheckError && (
+                        <p className="text-sm text-destructive">{emailCheckError}</p>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
