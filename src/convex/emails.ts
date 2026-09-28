@@ -10,6 +10,8 @@
 // Envoi UN email par destinataire : un refus n'annule jamais les autres.
 import { Resend } from "resend";
 import axios from "axios";
+import { action } from "./_generated/server";
+import { v } from "convex/values";
 
 export type EmailContent = {
   subject: string;
@@ -31,14 +33,14 @@ function brevoSender(): string {
 }
 
 /** Canal 1 : Brevo — marche sans domaine une fois l'adresse d'expédition
- *  confirmée. Retourne false si pas de clé ou si l'API refuse. */
+ *  confirmée. Retourne "brevo" si l'API a accepté, "" sinon. */
 async function sendViaBrevo(
   to: string,
   content: EmailContent,
   tag: string,
-): Promise<boolean> {
+): Promise<string> {
   const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) return false;
+  if (!apiKey) return "";
   try {
     const res = await axios.post(
       "https://api.brevo.com/v3/smtp/email",
@@ -57,15 +59,15 @@ async function sendViaBrevo(
         validateStatus: () => true,
       },
     );
-    if (res.status < 400) return true;
+    if (res.status < 400) return "brevo";
     console.warn(
       `[${tag}] Brevo a refusé ${to} : HTTP ${res.status}, canal suivant.`,
       typeof res.data === "object" ? JSON.stringify(res.data).slice(0, 200) : res.data,
     );
-    return false;
+    return "";
   } catch (err) {
     console.warn(`[${tag}] Brevo a échoué pour ${to} :`, err);
-    return false;
+    return "";
   }
 }
 
@@ -79,14 +81,16 @@ function getResend(): Resend | null {
 }
 
 /** Envoie un email à UN destinataire : Brevo → Resend → fallback Freebuff.
- *  Retourne true si l'un des canaux a abouti. */
+ *  Retourne le canal utilisé ("brevo" | "resend" | "freebuff"), "" si tout
+ *  a échoué. */
 export async function sendSingleEmail(
   to: string,
   content: EmailContent,
   tag: string,
-): Promise<boolean> {
+): Promise<string> {
   // 1) Brevo (pas de domaine requis, 300/jour gratuits)
-  if (await sendViaBrevo(to, content, tag)) return true;
+  const brevo = await sendViaBrevo(to, content, tag);
+  if (brevo) return brevo;
 
   // 2) Resend (domaine vérifié = tout le monde ; sinon compte propriétaire)
   const client = getResend();
@@ -98,7 +102,7 @@ export async function sendSingleEmail(
         subject: content.subject,
         html: content.html,
       });
-      if (!error) return true;
+      if (!error) return "resend";
       console.warn(
         `[${tag}] Resend a refusé ${to} : ${error.name} ${error.message}. Fallback Freebuff.`,
       );
@@ -118,10 +122,10 @@ export async function sendSingleEmail(
       },
       { headers: { "x-api-key": FREEBUFF_EMAIL_KEY } },
     );
-    return true;
+    return "freebuff";
   } catch (err) {
     console.warn(`[${tag}] fallback Freebuff a échoué pour ${to} :`, err);
-    return false;
+    return "";
   }
 }
 
@@ -136,3 +140,23 @@ export async function sendEmailsIndividually(
     await sendSingleEmail(email, content, tag);
   }
 }
+
+/** TEMPORAIRE (test) : envoie un email de test et renvoie le canal utilisé.
+ *  Sera supprimée après vérification. */
+export const sendTestEmail = action({
+  args: { to: v.string() },
+  handler: async (_ctx, { to }) => {
+    const channel = await sendSingleEmail(
+      to,
+      {
+        subject: "Classheure — test d'envoi d'email",
+        html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#0b1020;color:#e6e9f5;border-radius:12px">
+          <h1 style="color:#8fa5ff;font-size:18px">Classheure</h1>
+          <p style="font-size:14px;line-height:1.6">✅ La chaîne d'envoi d'emails fonctionne : attendez-vous à recevoir les codes, sondages et notifications par ce canal.</p>
+        </div>`,
+      },
+      "test",
+    );
+    return { channel: channel || "AUCUN (tout a échoué)" };
+  },
+});
