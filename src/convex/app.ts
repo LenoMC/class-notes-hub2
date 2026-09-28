@@ -1387,22 +1387,6 @@ export const deleteChatMessage = mutation({
 });
 
 // ---------- Points rouges « du nouveau » (navbar) ----------
-
-/** TEMPORAIRE (debug) : liste brute des créneaux pour vérifier que les
- *  horaires stockés correspondent bien aux créneaux actuels. */
-export const debugSlotStarts = query({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query("timetableSlots").collect();
-    return rows.map((s) => ({
-      day: s.day,
-      start: s.start,
-      end: s.end,
-      subject: s.subject,
-      weekType: s.weekType ?? null,
-    }));
-  },
-});
 const UNREAD_SECTIONS = ["chat", "forum", "sondages"] as const;
 type UnreadSection = (typeof UNREAD_SECTIONS)[number];
 

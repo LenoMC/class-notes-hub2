@@ -8,6 +8,7 @@ import { convexAuth, invalidateSessions } from "@convex-dev/auth/server";
 import { Email } from "@convex-dev/auth/providers/Email";
 import { Scrypt } from "lucia";
 import axios from "axios";
+import { sendSingleEmail } from "./emails";
 import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
 import {
   action,
@@ -68,46 +69,10 @@ async function sendCodeEmail(email: string, token: string, kind: "verify" | "res
       </div>
     </div>`;
 
-  const resendKey = process.env.RESEND_API_KEY;
-  if (resendKey) {
-    try {
-      await axios.post(
-        "https://api.resend.com/emails",
-        {
-          from: "Classheure <onboarding@resend.dev>",
-          to: [email],
-          subject,
-          html,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${resendKey}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-      return;
-    } catch (err) {
-      console.warn("[auth] Resend a échoué, fallback Freebuff :", err);
-    }
-  }
-
-  try {
-    await axios.post(
-      "https://auth.freebuff.app/send_otp",
-      {
-        to: email,
-        otp: token,
-        appName: process.env.VLY_APP_NAME || "a freebuff.com application",
-      },
-      {
-        headers: {
-          "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
-        },
-      },
-    );
-  } catch (error) {
-    throw new Error(JSON.stringify(error));
+  // Resend (SDK officiel) puis fallback Freebuff — un seul destinataire ici.
+  const ok = await sendSingleEmail(email, { subject, html }, "auth");
+  if (!ok) {
+    throw new Error("Impossible d'envoyer l'email. Réessayez dans un instant.");
   }
 }
 
