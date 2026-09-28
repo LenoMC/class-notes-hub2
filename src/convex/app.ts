@@ -2,13 +2,13 @@ import axios from "axios";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
+import { action, mutation, query, internalQuery } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError, canSpanPeriods, subjectRequiresOption } from "../lib/subjects";
-import { sendEmailsIndividually } from "./emails";
+import { sendEmailsIndividually, sendSingleEmail } from "./emails";
 import { PERIODS } from "../lib/periods";
 import {
   computeWeekState,
@@ -1601,6 +1601,16 @@ export const sendAdminMessage = mutation({
       readByStudent: side === "student",
       readByAdmin: side === "admin",
     });
+
+    // Un élève écrit pour la première fois (ou nouveau message) → notifie
+    // TOUS les admins globaux : email + MP Discord + SMS.
+    if (side === "student") {
+      await ctx.scheduler.runAfter(0, api.app.notifyAdminsOfChatMessage, {
+        studentName: student.name ?? student.email ?? "un élève",
+        studentEmail: student.email ?? "",
+        text: t,
+      });
+    }
     // L'envoi termine la saisie : on retire l'indicateur « ••• écrit ».
     const scope = side === "student" ? "student" : `admin:${user._id}`;
     const typingRows = await ctx.db
@@ -1611,6 +1621,138 @@ export const sendAdminMessage = mutation({
       if (r.userId === user._id) await ctx.db.delete(r._id);
     }
     return true;
+  },
+});
+
+/** Interne : contacts des admins globaux (email, téléphone, Discord). */
+export const adminContactsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const admins = (await ctx.db.query("users").collect()).filter(
+      (u) => u.isAdmin,
+    );
+    return {
+      emails: admins
+        .map((a) => a.email)
+        .filter((e): e is string => !!e && e.includes("@")),
+      phones: admins.map((a) => a.phone).filter((p): p is string => !!p),
+      discordIds: admins
+        .map((a) => a.discordId)
+        .filter((d): d is string => !!d),
+    };
+  },
+});
+
+/** Notification « nouveau message privé » à tous les admins globaux :
+ *  email (Brevo/Resend) + MP Discord + SMS (textbee). */
+export const notifyAdminsOfChatMessage = action({
+  args: {
+    studentName: v.string(),
+    studentEmail: v.string(),
+    text: v.string(),
+  },
+  handler: async (ctx, { studentName, studentEmail, text }) => {
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    // Les actions ne peuvent pas lire la base directement : passe par une
+    // query interne pour récupérer les contacts admins.
+    const { emails, phones, discordIds } = await ctx.runQuery(
+      internal.app.adminContactsInternal,
+      {},
+    );
+    const excerpt =
+      text.length > 160 ? `${text.slice(0, 160)}…` : text;
+
+    // ----- Email -----
+    const subject = `Classheure — message privé de ${studentName}`;
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+        <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Chat privé</h1>
+        </div>
+        <div style="padding:24px">
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
+            <strong>${studentName}</strong>${studentEmail ? ` (${studentEmail})` : ""} vous a écrit dans le chat privé :
+          </p>
+          <p style="margin:0 0 18px;font-size:14px;background:#101735;border:1px solid #2c3760;border-radius:10px;padding:14px;line-height:1.6">« ${excerpt} »</p>
+          ${
+            siteUrl
+              ? `<a href="${siteUrl}/admin" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:14px">Répondre dans l'administration</a>`
+              : ""
+          }
+          <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
+            Vous recevez cet email car vous êtes administrateur global de Classheure.
+          </p>
+        </div>
+      </div>`;
+    await sendEmailsIndividually(emails, { subject, html }, "chat-privé");
+
+    // ----- Discord (MP) -----
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (token && discordIds.length > 0) {
+      const headers = {
+        Authorization: `Bot ${token}`,
+        "Content-Type": "application/json",
+      };
+      for (const discordId of discordIds) {
+        try {
+          const ch = await axios.post(
+            "https://discord.com/api/v10/users/@me/channels",
+            { recipient_id: discordId },
+            { headers, validateStatus: () => true },
+          );
+          const channelId = ch.data?.id as string | undefined;
+          if (ch.status >= 400 || !channelId) continue;
+          await axios.post(
+            `https://discord.com/api/v10/channels/${channelId}/messages`,
+            {
+              embeds: [
+                {
+                  title: "💬 Nouveau message privé",
+                  description: `**${studentName}**${studentEmail ? ` (${studentEmail})` : ""} a écrit dans le chat privé :\n\n> ${excerpt}`,
+                  color: 0x4c6ef5,
+                  ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
+                  footer: { text: "Classheure — chat privé élève ↔ admins" },
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+              ...(siteUrl
+                ? {
+                    content: `💬 ${studentName} vous a écrit — <${siteUrl}/admin>`,
+                  }
+                : {}),
+            },
+            { headers, validateStatus: () => true },
+          );
+        } catch (err) {
+          console.warn("[chat-privé] Discord a échoué pour", discordId, err);
+        }
+      }
+    }
+
+    // ----- SMS (textbee) -----
+    const smsKey = process.env.TEXTBEE_API_KEY;
+    const deviceId =
+      process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
+    if (smsKey && deviceId && phones.length > 0) {
+      const smsText = `Classheure : ${studentName} vous a écrit dans le chat privé. « ${excerpt} »${siteUrl ? ` ${siteUrl}/admin` : ""}`;
+      for (const phone of phones) {
+        try {
+          await axios.post(
+            `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
+            { recipients: [phone], message: smsText },
+            {
+              headers: {
+                "x-api-key": smsKey,
+                "Content-Type": "application/json",
+              },
+              validateStatus: () => true,
+            },
+          );
+        } catch (err) {
+          console.warn("[chat-privé] SMS a échoué vers", phone, err);
+        }
+      }
+    }
   },
 });
 

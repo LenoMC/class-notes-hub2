@@ -633,9 +633,27 @@ function TodaySchedule({
                     </Badge>
                   )}
                   {!slot.cancelled && (
-                    <Button asChild variant="ghost" size="sm" className="text-xs">
-                      <Link to={`/edt?slot=${slot._id}`}>Voir les devoirs</Link>
-                    </Button>
+                    <>
+                      {/* Écran large : bouton texte. Petit écran : seule l'icône
+                          logo (rendu dans un badge rond) reste, pour ne pas
+                          écraser les infos du cours. */}
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        className="hidden text-xs sm:inline-flex"
+                      >
+                        <Link to={`/edt?slot=${slot._id}`}>Voir les devoirs</Link>
+                      </Button>
+                      <Link
+                        to={`/edt?slot=${slot._id}`}
+                        className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background p-1 transition-colors hover:border-primary/50 sm:hidden"
+                        aria-label="Voir les devoirs"
+                        title="Voir les devoirs"
+                      >
+                        <img src="/logo.svg" alt="" className="size-full rounded" />
+                      </Link>
+                    </>
                   )}
                 </div>
               ))}

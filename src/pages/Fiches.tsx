@@ -21,7 +21,7 @@ import {
   FileText,
   FolderOpen,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -79,6 +79,18 @@ const FILTERS = [
   { value: "devoir", label: "Devoirs", icon: ClipboardList },
 ] as const;
 
+/** Identifiant DOM sûr pour une ancre de matière. */
+function subjectAnchor(subject: string): string {
+  return (
+    "mat-" +
+    subject
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+  );
+}
+
 export default function Fiches() {
   const { user } = useAuth();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
@@ -104,6 +116,36 @@ export default function Fiches() {
   const subjects = [...bySubject.keys()].sort((a, b) =>
     a.localeCompare(b, "fr"),
   );
+
+  // Matière active : suivie au scroll pour surligner la navbar flottante.
+  const [activeSubject, setActiveSubject] = useState<string | null>(null);
+  const scrollLock = useRef(0);
+  useEffect(() => {
+    if (!fiches || subjects.length === 0) return;
+    const onScroll = () => {
+      if (Date.now() < scrollLock.current) return; // Ignore pendant un clic
+      let current: string | null = null;
+      for (const s of subjects) {
+        const el = document.getElementById(subjectAnchor(s));
+        if (el && el.getBoundingClientRect().top <= 140) current = s;
+      }
+      setActiveSubject(current ?? subjects[0] ?? null);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fiches, subjects.length]);
+
+  const jumpTo = (subject: string) => {
+    const el = document.getElementById(subjectAnchor(subject));
+    if (!el) return;
+    scrollLock.current = Date.now() + 800;
+    setActiveSubject(subject);
+    const y =
+      el.getBoundingClientRect().top + window.scrollY - 110; // sous la navbar flottante
+    window.scrollTo({ top: y, behavior: "smooth" });
+  };
 
   return (
     <AppShell isAdmin={user?.isAdmin}>
@@ -168,89 +210,124 @@ export default function Fiches() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-5">
-          {subjects.map((subject) => {
-            const list = bySubject.get(subject)!;
-            return (
-              <Card key={subject} className="panel border-border/70">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <FileText className="size-4 text-primary" />
-                    {subject}
-                    <Badge variant="secondary" className="ml-1 text-[10px]">
-                      {list.length}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    {list.length === 1
-                      ? "1 fiche publiée"
-                      : `${list.length} fiches publiées`}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {list
-                    .slice()
-                    .sort((a, b) => b.createdAt - a.createdAt)
-                    .map((f) => (
-                      <div
-                        key={f._id}
-                        className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2.5 transition-colors hover:border-primary/50"
-                      >
-                        <span
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            f.kind === "devoir"
-                              ? "bg-primary"
-                              : "bg-muted-foreground/60",
-                          )}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {f.title}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {f.description
-                              ? `${f.description} · `
-                              : ""}
-                            Publiée le {dateLabel(f.createdAt)}
-                          </p>
-                        </div>
-                        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                          {f.day} {f.start}
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-[10px] uppercase"
+        <>
+          {/* Navbar flottante des matières : suit le scroll, colonne sur mobile,
+              pilule scrollable sur desktop. Surligne la matière visible. */}
+          <nav
+            className={cn(
+              "sticky z-20 mb-5 rounded-xl border border-border/70 bg-background/85 shadow-lg shadow-primary/5 backdrop-blur-md",
+              // Sous la topbar (h-14) sur mobile ; à côté sur desktop :
+              "top-14 lg:top-14",
+            )}
+            aria-label="Aller à une matière"
+          >
+            <div className="flex gap-1 overflow-x-auto px-2 py-1.5 scrollbar-none lg:flex-wrap lg:justify-center">
+              {subjects.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => jumpTo(s)}
+                  className={cn(
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors cursor-pointer",
+                    activeSubject === s
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </nav>
+
+          <div className="space-y-5">
+            {subjects.map((subject) => {
+              const list = bySubject.get(subject)!;
+              return (
+                <Card
+                  key={subject}
+                  id={subjectAnchor(subject)}
+                  className="panel scroll-mt-32 border-border/70"
+                >
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <FileText className="size-4 text-primary" />
+                      {subject}
+                      <Badge variant="secondary" className="ml-1 text-[10px]">
+                        {list.length}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {list.length === 1
+                        ? "1 fiche publiée"
+                        : `${list.length} fiches publiées`}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {list
+                      .slice()
+                      .sort((a, b) => b.createdAt - a.createdAt)
+                      .map((f) => (
+                        <div
+                          key={f._id}
+                          className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-3 py-2.5 transition-colors hover:border-primary/50"
                         >
-                          {f.kind}
-                        </Badge>
-                        {f.externalUrl && (
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 shrink-0"
+                          <span
+                            className={cn(
+                              "size-2 shrink-0 rounded-full",
+                              f.kind === "devoir"
+                                ? "bg-primary"
+                                : "bg-muted-foreground/60",
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {f.title}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {f.description
+                                ? `${f.description} · `
+                                : ""}
+                              Publiée le {dateLabel(f.createdAt)}
+                            </p>
+                          </div>
+                          <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                            {f.day} {f.start}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-[10px] uppercase"
                           >
-                            <a
-                              href={f.externalUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label="Ouvrir le lien"
+                            {f.kind}
+                          </Badge>
+                          {f.externalUrl && (
+                            <Button
+                              asChild
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 shrink-0"
                             >
-                              <ExternalLink className="size-4 text-primary" />
-                            </a>
-                          </Button>
-                        )}
-                        <div className="shrink-0">
-                          <DownloadBtn fiche={f} />
+                              <a
+                                href={f.externalUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="Ouvrir le lien"
+                              >
+                                <ExternalLink className="size-4 text-primary" />
+                              </a>
+                            </Button>
+                          )}
+                          <div className="shrink-0">
+                            <DownloadBtn fiche={f} />
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                      ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
     </AppShell>
   );

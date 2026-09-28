@@ -127,7 +127,7 @@ export default function Admin() {
         scolaire.
       </p>
       <Tabs defaultValue="approvals" className="space-y-4">
-        <TabsList className="bg-secondary/60">
+        <TabsList className="max-w-full overflow-x-auto bg-secondary/60">
           <TabsTrigger value="approvals" className="gap-1.5">
             <ShieldCheck className="size-4" /> Approbations
             {pendingCount > 0 && (
