@@ -1786,21 +1786,36 @@ function AdminChatThread({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const messages = useQuery(
+  // Salon partagé (studentId undefined) ou conversation d'un élève.
+  const salonMessages = useQuery(api.app.listAdminSalonMessages, {}) as
+    | Array<{
+        _id: string;
+        text: string;
+        createdAt: number;
+        mine: boolean;
+        authorName: string;
+      }>
+    | undefined;
+  const threadMessages = useQuery(
     api.app.listAdminMessages,
-    studentId ? { studentId } : {},
+    studentId ? { studentId } : "skip",
   ) as
     | Array<{ _id: string; text: string; createdAt: number; mine: boolean }>
     | undefined;
+  const messages = studentId ? threadMessages : salonMessages;
   const send = useMutation(api.app.sendAdminMessage);
   const markRead = useMutation(api.app.markAdminChatReadAsAdmin);
   const setTyping = useMutation(api.app.setTyping);
-  // Scope : « admin:<élève> » dans une conversation, sinon salon personnel.
-  const scope = studentId ? `admin:${studentId}` : `admin:${user?._id ?? "?"}`;
-  const typingNames = useQuery(api.app.listTyping, { scope }) as
+  // Saisie d'un admin : visible par l'élève dans SA conversation
+  // ("admin:<id>") ou dans le salon entre admins ("salon").
+  const myScope = studentId ? `admin:${studentId}` : "salon";
+  // On écoute ce que l'autre côté écrit : l'élève ou les autres admins.
+  const typingNames = useQuery(api.app.listTyping, {
+    scope: studentId ? `student:${studentId}` : "salon",
+  }) as
     | string[]
     | undefined;
-  const otherTyping = (typingNames ?? []).length > 0;
+  const otherTyping = (typingNames ?? []).filter((n) => n.length > 0);
 
   useEffect(() => {
     if (studentId) void markRead({ studentId });
@@ -1820,7 +1835,7 @@ function AdminChatThread({
     try {
       await send({ text, ...(studentId ? { studentId } : {}) });
       setDraft("");
-      await setTyping({ scope, typing: false });
+      await setTyping({ scope: myScope, typing: false });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Envoi impossible.");
     } finally {
@@ -1870,6 +1885,11 @@ function AdminChatThread({
                     : "bg-secondary/80 rounded-bl-sm",
                 )}
               >
+                {!m.mine && "authorName" in m && (
+                  <p className="mb-0.5 text-[10px] font-bold text-primary">
+                    {(m as { authorName: string }).authorName}
+                  </p>
+                )}
                 <p className="whitespace-pre-wrap break-words">{m.text}</p>
                 <p
                   className={cn(
@@ -1886,7 +1906,11 @@ function AdminChatThread({
             </div>
           ))
         )}
-        {otherTyping && <TypingBubble />}
+        {otherTyping.length > 0 && (
+          <div className="flex justify-start">
+            <TypingBubble name={otherTyping.join(", ")} />
+          </div>
+        )}
       </div>
       <form
         onSubmit={handleSend}
@@ -1896,9 +1920,9 @@ function AdminChatThread({
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
-            void setTyping({ scope, typing: e.target.value.length > 0 });
+            void setTyping({ scope: myScope, typing: e.target.value.length > 0 });
           }}
-          onBlur={() => void setTyping({ scope, typing: false })}
+          onBlur={() => void setTyping({ scope: myScope, typing: false })}
           placeholder="Écrire un message…"
           className="flex-1"
           maxLength={2000}

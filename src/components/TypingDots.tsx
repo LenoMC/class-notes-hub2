@@ -18,22 +18,33 @@ export function TypingDots({ name }: { name: string }) {
   );
 }
 
-/** Variante compacte sans nom (bulle dans le fil). */
-export function TypingBubble({ className }: { className?: string }) {
+/** Bulle « ••• » dans le fil du chat, avec le prénom de qui écrit. */
+export function TypingBubble({
+  name,
+  className,
+}: {
+  name?: string;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full bg-secondary/70 px-3 py-2",
+        "inline-flex items-center gap-2 rounded-full bg-secondary/70 px-3 py-2",
         className,
       )}
     >
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="size-1.5 rounded-full bg-muted-foreground/70 animate-bounce"
-          style={{ animationDelay: `${i * 150}ms`, animationDuration: "1s" }}
-        />
-      ))}
+      <span className="inline-flex items-end gap-[3px]">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="size-1.5 rounded-full bg-muted-foreground/70 animate-bounce"
+            style={{ animationDelay: `${i * 150}ms`, animationDuration: "1s" }}
+          />
+        ))}
+      </span>
+      {name && (
+        <span className="text-xs text-muted-foreground">{name} écrit…</span>
+      )}
     </span>
   );
 }

@@ -7,12 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { TypingBubble } from "@/components/TypingDots";
+import { useAuth } from "@/hooks/use-auth";
 
 /** Panneau « Chat 🔒 » côté élève : conversation privée avec les admins
  *  globaux. Les admins voient automatiquement la conversation apparaître
  *  dans leur onglet Chat ( Administration → Chat ). */
 export function StudentAdminChatPanel() {
+  const { user } = useAuth();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -23,8 +26,12 @@ export function StudentAdminChatPanel() {
   const send = useMutation(api.app.sendAdminMessage);
   const markRead = useMutation(api.app.markAdminChatReadAsStudent);
   const setTyping = useMutation(api.app.setTyping);
+  // J'écris dans MON scope (l'admin y est abonné) et j'écoute le scope où
+  // les admins écrivent pour cette conversation (admin:<mon id>).
+  const myId = (user?._id ?? "?") as string;
+  const myWriteScope = `student:${myId}`;
   const typingNames = useQuery(api.app.listTyping, {
-    scope: "student",
+    scope: `admin:${myId}`,
   }) as string[] | undefined;
 
   // Ouverture = tout est lu (le point rouge disparaît)
@@ -46,9 +53,11 @@ export function StudentAdminChatPanel() {
     try {
       await send({ text });
       setDraft("");
-      await setTyping({ scope: "student", typing: false });
+      await setTyping({ scope: myWriteScope, typing: false });
     } catch (err) {
-      console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Envoi impossible. Réessayez.",
+      );
     } finally {
       setSending(false);
     }
@@ -119,7 +128,7 @@ export function StudentAdminChatPanel() {
         )}
         {(typingNames ?? []).length > 0 && (
           <div className="flex justify-start">
-            <TypingBubble />
+            <TypingBubble name={(typingNames ?? []).join(", ")} />
           </div>
         )}
       </div>
@@ -132,9 +141,9 @@ export function StudentAdminChatPanel() {
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
-            void setTyping({ scope: "student", typing: e.target.value.length > 0 });
+            void setTyping({ scope: myWriteScope, typing: e.target.value.length > 0 });
           }}
-          onBlur={() => void setTyping({ scope: "student", typing: false })}
+          onBlur={() => void setTyping({ scope: myWriteScope, typing: false })}
           placeholder="Écrire aux administrateurs…"
           className="flex-1"
           maxLength={2000}

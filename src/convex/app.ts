@@ -1580,18 +1580,24 @@ export const sendAdminMessage = mutation({
     if (!t) throw new Error("Message vide.");
     if (t.length > 2000) {
       throw new Error("Message trop long (2000 caractères maximum).");
-    }
-    let student = user;
+    }    let student = user;
     let side: "student" | "admin" = "student";
+    let salon = false;
     if (isGlobalAdmin(user)) {
-      if (!studentId) throw new Error("Choisissez un élève dans la liste.");
-      const target = await ctx.db.get(studentId);
-      if (!target) throw new Error("Élève introuvable.");
-      student = target as UserDoc;
-      side = "admin";
+      if (!studentId) {
+        // Salon partagé entre admins : studentId = l'admin lui-même.
+        student = user;
+        side = "admin";
+        salon = true;
+      } else {
+        const target = await ctx.db.get(studentId);
+        if (!target) throw new Error("Élève introuvable.");
+        student = target as UserDoc;
+        side = "admin";
+        salon = false;
+      }
     }
-    const now = Date.now();
-    await ctx.db.insert("adminMessages", {
+    const now = Date.now();    await ctx.db.insert("adminMessages", {
       studentId: student._id,
       authorId: user._id,
       authorSide: side,
@@ -1600,6 +1606,7 @@ export const sendAdminMessage = mutation({
       // Le côté qui envoie a « lu » par définition ; l'autre côté non.
       readByStudent: side === "student",
       readByAdmin: side === "admin",
+      ...(salon ? { salon: true } : {}),
     });
 
     // Un élève écrit pour la première fois (ou nouveau message) → notifie
@@ -1612,7 +1619,11 @@ export const sendAdminMessage = mutation({
       });
     }
     // L'envoi termine la saisie : on retire l'indicateur « ••• écrit ».
-    const scope = side === "student" ? "student" : `admin:${user._id}`;
+    const scope = salon
+      ? "salon"
+      : side === "student"
+        ? `student:${user._id}`
+        : `admin:${student._id}`;
     const typingRows = await ctx.db
       .query("typingStates")
       .withIndex("by_scope", (q) => q.eq("scope", scope))
@@ -1621,6 +1632,39 @@ export const sendAdminMessage = mutation({
       if (r.userId === user._id) await ctx.db.delete(r._id);
     }
     return true;
+  },
+});
+
+/** Salon partagé entre admins : tous les messages marqués salon=true,
+ *  enrichis du nom de l'auteur. */
+export const listAdminSalonMessages = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) return [];
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_salon", (q) => q.eq("salon", true))
+      .order("desc")
+      .take(200);
+    const out: Array<{
+      _id: Id<"adminMessages">;
+      text: string;
+      createdAt: number;
+      mine: boolean;
+      authorName: string;
+    }> = [];
+    for (const m of [...rows].reverse()) {
+      const author = await ctx.db.get(m.authorId);
+      out.push({
+        _id: m._id,
+        text: m.text,
+        createdAt: m.createdAt,
+        mine: m.authorId === user._id,
+        authorName: author?.name ?? "Admin",
+    });
+    }
+    return out;
   },
 });
 
@@ -1827,7 +1871,7 @@ export const setTyping = mutation({
 export const listTyping = query({
   args: { scope: v.string() },
   handler: async (ctx, { scope }) => {
-    await requireUser(ctx);
+    const me = await requireUser(ctx);
     const cutoff = Date.now() - TYPING_TTL;
     const rows = await ctx.db
       .query("typingStates")
@@ -1836,8 +1880,9 @@ export const listTyping = query({
     const names: string[] = [];
     for (const r of rows) {
       if (r.updatedAt < cutoff) continue; // expirée, ignorée
+      if (r.userId === me._id) continue; // jamais mon propre nom
       const u = await ctx.db.get(r.userId);
-      if (u?.name) names.push(u.name.split(" ")[0]);
+      if (u?.name) names.push(u.name);
     }
     return names;
   },

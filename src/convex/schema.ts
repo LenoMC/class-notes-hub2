@@ -249,9 +249,11 @@ const schema = defineSchema(
     createdAt: v.number(),
     readByAdmin: v.optional(v.boolean()), // vu par un admin (côté élèves)
     readByStudent: v.optional(v.boolean()), // lu par l'élève (côté admins)
+    salon: v.optional(v.boolean()), // message du salon partagé entre admins
   })
     .index("by_student", ["studentId"])
-    .index("by_student_created", ["studentId", "createdAt"]),
+    .index("by_student_created", ["studentId", "createdAt"])
+    .index("by_salon", ["salon", "createdAt"]),
 
   // Indicateur de saisie « ••• écrit » : une ligne par utilisateur actif,
   // auto-expirée (TTL 6 s) côté lecture.
