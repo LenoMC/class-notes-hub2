@@ -46,7 +46,7 @@ import {
   Trash2,
   ThumbsUp,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -110,6 +110,13 @@ export default function Forum() {
   const threads = useQuery(api.forum.listForumThreads) as Thread[] | undefined;
   const [selectedId, setSelectedId] = useState<Id<"forumThreads"> | null>(null);
   const [creating, setCreating] = useState(false);
+  const markSectionRead = useMutation(api.app.markSectionRead);
+
+  // Page ouverte = section vue : efface le point rouge de la navbar
+  useEffect(() => {
+    void markSectionRead({ section: "forum" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (authLoading) {
     return (

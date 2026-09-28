@@ -11,11 +11,11 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
-import axios from "axios";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import { sendEmailsIndividually } from "./emails";
 
 type UserDoc = Doc<"users">;
 
@@ -124,6 +124,7 @@ export const createForumThread = mutation({
       ...(subject ? { subject } : {}),
       resolved: false,
       answerCount: 0,
+      lastActivityAt: Date.now(),
       createdAt: Date.now(),
     });
     return true;
@@ -195,14 +196,16 @@ export const answerForumThread = mutation({
     const b = body.trim();
     if (!b) throw new Error("Réponse vide.");
     if (b.length > 3000) throw new Error("Réponse trop longue (3000 caractères maximum).");
+    const now = Date.now();
     await ctx.db.insert("forumPosts", {
       threadId,
       authorId: user._id,
       body: b,
-      createdAt: Date.now(),
+      createdAt: now,
     });
     await ctx.db.patch(threadId, {
       answerCount: (t.answerCount ?? 0) + 1,
+      lastActivityAt: now, // fait remonter le point rouge du forum
     });
     return true;
   },
@@ -226,6 +229,7 @@ export const voteForumThread = mutation({
       return { voted: false };
     }
     await ctx.db.insert("forumVotes", { threadId, userId: user._id });
+    await ctx.db.patch(threadId, { lastActivityAt: Date.now() });
     return { voted: true };
   },
 });
@@ -412,7 +416,9 @@ export const createPoll = mutation({
   },
 });
 
-/** Envoi des emails « nouveau sondage » (Resend, fallback Freebuff). */
+/** Envoi des emails « nouveau sondage » : un envoi PAR destinataire.
+ *  En mode test Resend, une adresse refusée n'annule plus l'envoi aux
+ *  autres membres ; fallback Freebuff individuel. */
 export const sendPollEmails = action({
   args: {
     to: v.array(v.string()),
@@ -422,7 +428,6 @@ export const sendPollEmails = action({
   handler: async (_ctx, { to, question, authorName }) => {
     if (to.length === 0) return;
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const apiKey = process.env.RESEND_API_KEY;
     const subject = `Classheure — nouveau sondage : ${question}`;
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
@@ -444,39 +449,7 @@ export const sendPollEmails = action({
           </p>
         </div>
       </div>`;
-    if (apiKey) {
-      try {
-        await axios.post(
-          "https://api.resend.com/emails",
-          { from: "Classheure <onboarding@resend.dev>", to, subject, html },
-          {
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-        return;
-      } catch (err) {
-        console.warn("[sondages] Resend a échoué :", err);
-      }
-    }
-    // Fallback : canal Freebuff, un envoi par destinataire (limité à 20)
-    for (const email of to.slice(0, 20)) {
-      try {
-        await axios.post(
-          "https://auth.freebuff.app/send_otp",
-          {
-            to: email,
-            otp: `Sondage : ${question} — connectez-vous pour voter`,
-            appName: process.env.VLY_APP_NAME || "a freebuff.com application",
-          },
-          { headers: { "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4" } },
-        );
-      } catch (err) {
-        console.warn("[sondages] fallback Freebuff a échoué pour", email, err);
-      }
-    }
+    await sendEmailsIndividually(to, { subject, html }, "sondages");
   },
 });
 

@@ -45,7 +45,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type Poll = {
@@ -86,6 +86,13 @@ export default function Sondages() {
   const polls = useQuery(api.forum.listPolls) as Poll[] | undefined;
   const canCreate = !!user?.isAdmin || !!user?.isClassAdmin;
   const [creating, setCreating] = useState(false);
+  const markSectionRead = useMutation(api.app.markSectionRead);
+
+  // Page ouverte = section vue : efface le point rouge de la navbar
+  useEffect(() => {
+    void markSectionRead({ section: "sondages" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (authLoading) {
     return (

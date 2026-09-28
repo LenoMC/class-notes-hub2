@@ -4,10 +4,11 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import { optionValidator, weekTypeValidator } from "./schema";
 import { optionRuleError, canSpanPeriods, subjectRequiresOption } from "../lib/subjects";
+import { sendEmailsIndividually } from "./emails";
 import { PERIODS } from "../lib/periods";
 import {
   computeWeekState,
@@ -205,14 +206,6 @@ export const sendApprovalEmails = action({
     // `bunx convex env set PUBLIC_SITE_URL https://votre-site.fr`.
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
     const subject = `Classheure — nouvelle demande d'accès à approuver (${userName})`;
-    // Email HTML propre via Resend (RESEND_API_KEY). Fallback : console.
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.warn(
-        "[approbations] RESEND_API_KEY manquante : email non envoyé.",
-      );
-      return;
-    }
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
@@ -234,25 +227,9 @@ export const sendApprovalEmails = action({
           </p>
         </div>
       </div>`;
-    try {
-      await axios.post(
-        "https://api.resend.com/emails",
-        {
-          from: "Classheure <onboarding@resend.dev>",
-          to,
-          subject,
-          html,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    } catch (err) {
-      console.warn("[approbations] échec envoi Resend :", err);
-    }
+    // Un envoi PAR destinataire : en mode test Resend, une adresse refusée
+    // n'annule plus l'envoi aux autres ; fallback Freebuff par destinataire.
+    await sendEmailsIndividually(to, { subject, html }, "approbations");
   },
 });
 
@@ -553,13 +530,6 @@ export const sendDecisionEmails = action({
   },
   handler: async (ctx, { to, userName, userEmail, approve, reviewerName, note }) => {
     if (to.length === 0) return;
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.warn(
-        "[décision] RESEND_API_KEY manquante : email non envoyé.",
-      );
-      return;
-    }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
     const subject = approve
       ? `Classheure — demande APPROUVÉE : ${userName}`
@@ -593,20 +563,9 @@ export const sendDecisionEmails = action({
           </p>
         </div>
       </div>`;
-    try {
-      await axios.post(
-        "https://api.resend.com/emails",
-        { from: "Classheure <onboarding@resend.dev>", to, subject, html },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    } catch (err) {
-      console.warn("[décision] échec envoi Resend :", err);
-    }
+    // Un envoi PAR destinataire : une adresse refusée n'annule plus les
+    // autres ; fallback Freebuff par destinataire.
+    await sendEmailsIndividually(to, { subject, html }, "décision");
   },
 });
 
@@ -1424,6 +1383,109 @@ export const deleteChatMessage = mutation({
     // Supprime aussi l'image jointe éventuelle
     if (message.imageId) await ctx.storage.delete(message.imageId);
     await ctx.db.delete(messageId);
+  },
+});
+
+// ---------- Points rouges « du nouveau » (navbar) ----------
+
+const UNREAD_SECTIONS = ["chat", "forum", "sondages"] as const;
+type UnreadSection = (typeof UNREAD_SECTIONS)[number];
+
+async function lastReadFor(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  section: UnreadSection,
+): Promise<number> {
+  const row = await ctx.db
+    .query("readStates")
+    .withIndex("by_user_section", (q) =>
+      q.eq("userId", userId).eq("section", section),
+    )
+    .first();
+  return row?.lastReadAt ?? 0;
+}
+
+/** Nombre de nouveaux éléments depuis la dernière visite, par section
+ *  (chat / forum / sondages) : sert au point rouge de la navbar.
+ *  - chat : messages des autres membres de la classe ;
+ *  - forum : questions nouvelles OU ayant reçu une réponse/vote ;
+ *  - sondages : sondages créés par les autres. */
+export const getUnreadCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const classId = user.isAdmin
+      ? user.adminOfClassId ?? user.classId ?? null
+      : user.classId ?? null;
+    const counts: Record<UnreadSection, number> = {
+      chat: 0,
+      forum: 0,
+      sondages: 0,
+    };
+    if (!classId) return counts;
+
+    // Chat : messages des autres depuis la dernière visite
+    const chatLast = await lastReadFor(ctx, user._id, "chat");
+    counts.chat = (
+      await ctx.db
+        .query("chatMessages")
+        .withIndex("by_class", (q) => q.eq("classId", classId))
+        .collect()
+    ).filter((m) => m.authorId !== user._id && m.createdAt > chatLast).length;
+
+    // Forum : questions dont la dernière activité (question, réponse, vote)
+    // est plus récente que la dernière visite et qui ne viennent pas de moi.
+    const forumLast = await lastReadFor(ctx, user._id, "forum");
+    counts.forum = (
+      await ctx.db
+        .query("forumThreads")
+        .withIndex("by_class", (q) => q.eq("classId", classId))
+        .collect()
+    ).filter(
+      (t) =>
+        t.authorId !== user._id &&
+        (t.lastActivityAt ?? t.createdAt) > forumLast,
+    ).length;
+
+    // Sondages : sondages créés par les autres depuis la dernière visite
+    const pollsLast = await lastReadFor(ctx, user._id, "sondages");
+    counts.sondages = (
+      await ctx.db
+        .query("polls")
+        .withIndex("by_class", (q) => q.eq("classId", classId))
+        .collect()
+    ).filter((p) => p.authorId !== user._id && p.createdAt > pollsLast).length;
+
+    return counts;
+  },
+});
+
+/** Marque une section comme visitée (le point rouge disparaît). */
+export const markSectionRead = mutation({
+  args: { section: v.union(
+    v.literal("chat"),
+    v.literal("forum"),
+    v.literal("sondages"),
+  ) },
+  handler: async (ctx, { section }) => {
+    const user = await requireUser(ctx);
+    const existing = await ctx.db
+      .query("readStates")
+      .withIndex("by_user_section", (q) =>
+        q.eq("userId", user._id).eq("section", section),
+      )
+      .first();
+    const now = Date.now();
+    if (existing) {
+      await ctx.db.patch(existing._id, { lastReadAt: now });
+    } else {
+      await ctx.db.insert("readStates", {
+        userId: user._id,
+        section,
+        lastReadAt: now,
+      });
+    }
+    return true;
   },
 });
 

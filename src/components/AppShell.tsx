@@ -17,6 +17,8 @@ import {
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import type { ReactNode } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Accueil", icon: LayoutDashboard },
@@ -26,6 +28,14 @@ const NAV_ITEMS = [
   { to: "/forum", label: "Forum", icon: CircleDot },
   { to: "/sondages", label: "Sondages", icon: BarChart3 },
 ];
+
+/** Associe chaque route au compteur de nouveautés correspondant. */
+const UNREAD_BY_ROUTE: Record<string, keyof typeof COUNT_ZERO> = {
+  "/chat": "chat",
+  "/forum": "forum",
+  "/sondages": "sondages",
+};
+const COUNT_ZERO = { chat: 0, forum: 0, sondages: 0 } as const;
 
 export function AppShell({
   children,
@@ -37,6 +47,12 @@ export function AppShell({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Compteurs de nouveautés (point rouge) : chat / forum / sondages.
+  // undefined tant que la requête charge, pour éviter le flash de points.
+  const unread = useQuery(api.app.getUnreadCounts) as
+    | { chat: number; forum: number; sondages: number }
+    | undefined;
 
   const initials = (user?.name || user?.email || "?")
     .split(/[\s.@]+/)
@@ -53,24 +69,39 @@ export function AppShell({
 
   const links = (
     <>
-      {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          onClick={() => setMobileOpen(false)}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-primary/15 text-primary glow-ring-soft"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-            )
-          }
-        >
-          <Icon className="size-4" />
-          {label}
-        </NavLink>
-      ))}
+      {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
+        const section = UNREAD_BY_ROUTE[to];
+        const count = unread ? unread[section] : 0;
+        const showDot = unread !== undefined && count > 0;
+        return (
+          <NavLink
+            key={to}
+            to={to}
+            onClick={() => setMobileOpen(false)}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-primary/15 text-primary glow-ring-soft"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+              )
+            }
+          >
+            <span className="relative inline-flex">
+              <Icon className="size-4" />
+              {showDot && (
+                <span
+                  className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground shadow"
+                  aria-label={`${count} nouveautés`}
+                >
+                  {count > 9 ? "9+" : count}
+                </span>
+              )}
+            </span>
+            {label}
+          </NavLink>
+        );
+      })}
       {isAdmin && (
         <NavLink
           to="/admin"

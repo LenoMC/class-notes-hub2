@@ -121,6 +121,7 @@ export default function Chat() {
   const sendMessage = useMutation(api.app.sendChatMessage);
   const deleteMessage = useMutation(api.app.deleteChatMessage);
   const generateUploadUrl = useMutation(api.app.generateUploadUrl);
+  const markSectionRead = useMutation(api.app.markSectionRead);
   const [pendingImage, setPendingImage] = useState<{
     file: File;
     preview: string;
@@ -148,6 +149,12 @@ export default function Chat() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages?.length]);
+
+  // Page ouverte = section vue : efface le point rouge de la navbar
+  useEffect(() => {
+    void markSectionRead({ section: "chat" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();

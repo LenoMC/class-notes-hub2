@@ -94,6 +94,7 @@ const schema = defineSchema(
       resolvedById: v.optional(v.id("users")), // qui a marqué résolu
       resolvedAt: v.optional(v.number()),
       answerCount: v.optional(v.number()), // dénormalisé pour trier sans calculer
+      lastActivityAt: v.optional(v.number()), // réponse/vote pour le point « non lu »
       createdAt: v.number(),
     })
       .index("by_class", ["classId"])
@@ -237,6 +238,18 @@ const schema = defineSchema(
     reviewedAt: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_user", ["userId"]),
+
+  // Dernière visite de chaque utilisateur dans une section (chat/forum/sondages)
+  // pour afficher le point rouge « du nouveau ici » dans la navbar.
+  readStates: defineTable({
+    userId: v.id("users"),
+    section: v.union(
+      v.literal("chat"),
+      v.literal("forum"),
+      v.literal("sondages"),
+    ),
+    lastReadAt: v.number(),
+  }).index("by_user_section", ["userId", "section"]),
 },
   {
     schemaValidation: false,
