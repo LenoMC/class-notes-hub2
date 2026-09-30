@@ -464,6 +464,9 @@ function TimetableGrid({
             cancelledToday: true,
           });
         }
+        // IMPORTANT : réenregistrer la case dans la map, sinon le cours
+        // modifié disparaît de la grille.
+        map.set(key, arr);
         continue;
       }
       arr.push(s);

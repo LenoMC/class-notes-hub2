@@ -623,7 +623,6 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
   const [subject, setSubject] = useState("");
   const [teacher, setTeacher] = useState("");
   const [room, setRoom] = useState("");
-  const [weekType, setWeekType] = useState<"A" | "B" | "AB">("AB");
   const [saving, setSaving] = useState(false);
   // Seule l'EPS peut chevaucher plusieurs créneaux : le champ Fin est
   // débloqué uniquement quand la matière saisie est l'EPS.
@@ -641,9 +640,9 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
-        // Une date saisie = la semaine de ce jour-là (A ou B), même si le
-        // sélecteur global dit autre chose.
-        weekType: weekAuto ?? weekType,
+        // Une date saisie = la semaine de ce jour-là (A ou B).
+        // Sans date, le créneau vaut pour toutes les semaines (A+B).
+        weekType: weekAuto ?? "AB",
       });
       toast.success(
         weekAuto
@@ -697,6 +696,11 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           {date && weekAuto && (
             <p className="text-xs text-muted-foreground">
               Sera ajouté le <strong>{day}</strong> en <strong>semaine {weekAuto}</strong> — visible exactement ce jour-là.
+            </p>
+          )}
+          {!date && (
+            <p className="text-xs text-muted-foreground">
+              Sans date, le créneau vaut pour toutes les semaines (A+B). Mettez la date du cours pour cibler la bonne semaine automatiquement.
             </p>
           )}
         </div>
@@ -769,32 +773,6 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
                 Seule l'EPS peut occuper plusieurs créneaux d'affilée.
               </p>
             )}
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label>
-            Semaine {weekAuto ? `(auto : ${weekAuto})` : "(cochez A ou B)"}
-          </Label>
-          <div className="flex rounded-lg border border-border overflow-hidden">
-            {(
-              [
-                ["AB", "Toutes"],
-                ["A", "Semaine A"],
-                ["B", "Semaine B"],
-              ] as const
-            ).map(([w, label]) => (
-              <Button
-                key={w}
-                type="button"
-                variant={weekAuto ? (weekAuto === w ? "default" : "ghost") : weekType === w ? "default" : "ghost"}
-                size="sm"
-                className="flex-1 rounded-none"
-                disabled={!!weekAuto}
-                onClick={() => setWeekType(w)}
-              >
-                {label}
-              </Button>
-            ))}
           </div>
         </div>
         <div className="space-y-1.5">
