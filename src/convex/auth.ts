@@ -228,6 +228,35 @@ export const verifyEmailDeliverable = action({
     if (!normalized.includes("@") || !domain || !domain.includes(".")) {
       return { ok: false, reason: "syntaxe" as const };
     }
+
+    // ----- 1) Contrôle SMTP de la boîte (ZeroBounce) — le plus fiable. —
+    // Vérifie le domaine ET l'existence réelle de la boîte.
+    const apiKey = process.env.ZEROBOUNCE_API_KEY;
+    if (apiKey) {
+      try {
+        const res = await axios.get("https://api.zerobounce.net/v2/validate", {
+          params: { api_key: apiKey, email: normalized },
+          validateStatus: () => true,
+        });
+        if (res.status < 400) {
+          const status = (res.data as { status?: string })?.status;
+          // valid → la boîte existe ; catch-all → domaine qui accepte tout
+          // (on laisse passer) ; invalid / do_not_mail / spamtrap… → rejet.
+          if (status === "valid" || status === "catch-all") {
+            return { ok: true, reason: "smtp" as const };
+          }
+          if (status) {
+            return { ok: false, reason: "inexistante" as const };
+          }
+        } else {
+          console.warn("[auth] ZeroBounce HTTP", res.status);
+        }
+      } catch (err) {
+        console.warn("[auth] ZeroBounce a échoué :", err);
+      }
+    }
+
+    // ----- 2) Secours sans clé : contrôle domaine (MX/A via DNS). -----
     if (WELL_KNOWN_EMAIL_DOMAINS.includes(domain)) {
       return { ok: true, reason: "domaine-connu" as const };
     }
@@ -238,31 +267,7 @@ export const verifyEmailDeliverable = action({
     } catch (err) {
       console.warn("[auth] vérification DNS impossible :", err);
     }
-
-    // ----- Contrôle SMTP de la boîte (ZeroBounce) -----
-    const apiKey = process.env.ZEROBOUNCE_API_KEY;
-    if (!apiKey) return { ok: true, reason: "domaine-seulement" as const };
-    try {
-      const res = await axios.get("https://api.zerobounce.net/v2/validate", {
-        params: { api_key: apiKey, email: normalized },
-        validateStatus: () => true,
-      });
-      if (res.status >= 400) {
-        console.warn("[auth] ZeroBounce HTTP", res.status);
-        return { ok: true, reason: "domaine-seulement" as const };
-      }
-      const status = (res.data as { status?: string })?.status;
-      // valid → la boîte existe ; catch-all → domaine qui accepte tout (on
-      // laisse passer) ; les autres (invalid, do_not_mail, spamtrap…)
-      // → adresse à rejeter.
-      if (status === "valid" || status === "catch-all") {
-        return { ok: true, reason: "smtp" as const };
-      }
-      return { ok: false, reason: "inexistante" as const };
-    } catch (err) {
-      console.warn("[auth] ZeroBounce a échoué :", err);
-      return { ok: true, reason: "domaine-seulement" as const };
-    }
+    return { ok: true, reason: "domaine-seulement" as const };
   },
 });
 
