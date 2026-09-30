@@ -285,14 +285,11 @@ export default function Fiches() {
                               {f.title}
                             </p>
                             <p className="truncate text-xs text-muted-foreground">
-                              {f.description
-                                ? `${f.description} · `
-                                : ""}
-                              Publiée le {dateLabel(f.createdAt)}
+                              {f.description ?? ""}
                             </p>
                           </div>
                           <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                            {f.day} {f.start}
+                            {dateLabel(f.createdAt)}
                           </span>
                           <Badge
                             variant="outline"
