@@ -1410,8 +1410,7 @@ function UploadForm({
   const [file, setFile] = useState<File | null>(null);
   const [externalUrl, setExternalUrl] = useState("");
   const [uploading, setUploading] = useState(false);
-  // Date visée : préremplie avec le jour cliqué, modifiable.
-  const [forDate, setForDate] = useState<string>(date ?? "");
+  // Date visée : automatique — c'est celle du jour cliqué dans l'EDT.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1451,11 +1450,11 @@ function UploadForm({
         bytes,
         storageId,
         externalUrl: externalUrl.trim() || undefined,
-        forDate: forDate.trim() || undefined,
+        forDate: date ?? undefined,
       });
       toast.success(
-        forDate.trim()
-          ? `Document publié pour le ${forDate.trim().split("-").reverse().join("/")}.`
+        date
+          ? `Document publié pour le ${date.split("-").reverse().join("/")}.`
           : "Document publié. Il est visible par la classe immédiatement.",
       );
       setTitle("");
@@ -1493,19 +1492,13 @@ function UploadForm({
           <Link2 className="size-4" /> Fiche de cours
         </Button>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="fiche-date">Date du cours</Label>
-        <Input
-          id="fiche-date"
-          type="date"
-          value={forDate}
-          onChange={(e) => setForDate(e.target.value)}
-        />
+      {date && (
         <p className="text-[11px] text-muted-foreground">
-          Préremplie avec le jour cliqué : la fiche n'apparaîtra dans l'EDT
-          que ce jour-là.
+          Sera attachée au cours du{" "}
+          <strong>{date.split("-").reverse().join("/")}</strong> — elle
+          n'apparaîtra dans l'EDT que ce jour-là.
         </p>
-      </div>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="up-title">Titre</Label>
         <Input
