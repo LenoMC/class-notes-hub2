@@ -35,6 +35,7 @@ import {
   DAY_MS,
 } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
+import { useSearchParams } from "react-router";
 import {
   ArrowLeft,
   CalendarOff,
@@ -119,6 +120,10 @@ export default function Admin() {
     );
   }
 
+  // Onglet actif pilotable par URL (notifications : /admin?tab=adminchat…)
+  const [tabParam] = useSearchParams();
+  const tab = tabParam.get("tab");
+
   return (
     <AppShell isAdmin>
       <h1 className="text-2xl font-semibold tracking-tight mb-1">Administration</h1>
@@ -126,30 +131,30 @@ export default function Admin() {
         Classes prédéfinies, emplois du temps, comptes utilisateurs et calendrier
         scolaire.
       </p>
-      <Tabs defaultValue="approvals" className="space-y-4">
+      <Tabs defaultValue="approvals" value={tab ?? undefined} className="space-y-4">
         <div className="w-full overflow-x-auto pb-1">
           <TabsList className="inline-flex h-9 w-max min-w-full max-w-none bg-secondary/60">
             <TabsTrigger value="approvals" className="shrink-0 gap-1.5 px-3">
-            <ShieldCheck className="size-4" /> Approbations
-            {pendingCount > 0 && (
-              <Badge className="ml-1 h-5 px-1.5 text-[10px]">{pendingCount}</Badge>
-            )}
-          </TabsTrigger>
+              <ShieldCheck className="size-4" /> Approbations
+              {pendingCount > 0 && (
+                <Badge className="ml-1 h-5 px-1.5 text-[10px]">{pendingCount}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="classes" className="shrink-0 gap-1.5 px-3">
-            <Plus className="size-4" /> Classes
-          </TabsTrigger>
+              <Plus className="size-4" /> Classes
+            </TabsTrigger>
             <TabsTrigger value="edt" className="shrink-0 gap-1.5 px-3">
-            <CalendarPlus className="size-4" /> Emplois du temps
-          </TabsTrigger>
+              <CalendarPlus className="size-4" /> Emplois du temps
+            </TabsTrigger>
             <TabsTrigger value="users" className="shrink-0 gap-1.5 px-3">
-            <Users className="size-4" /> Utilisateurs
-          </TabsTrigger>
+              <Users className="size-4" /> Utilisateurs
+            </TabsTrigger>
             <TabsTrigger value="adminchat" className="shrink-0 gap-1.5 px-3">
-            <MessageSquareLock className="size-4" /> Chat
-            {msgBadge > 0 && (
-              <Badge className="ml-1 h-5 px-1.5 text-[10px]">{msgBadge}</Badge>
-            )}
-          </TabsTrigger>
+              <MessageSquareLock className="size-4" /> Chat
+              {msgBadge > 0 && (
+                <Badge className="ml-1 h-5 px-1.5 text-[10px]">{msgBadge}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="holidays" className="shrink-0 gap-1.5 px-3">
               <CalendarOff className="size-4" /> Vacances & semaines
             </TabsTrigger>
@@ -1668,7 +1673,24 @@ function HolidaysTab() {
 // ============================================================================
 
 function AdminChatTab() {
-  const [selected, setSelected] = useState<Id<"users"> | "__self__" | null>(null);
+  // Conversation ouverte pilotable par URL : /admin?tab=adminchat&student=<id>
+  // (utilisé par les notifications navigateur). Sans paramètre : liste.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const studentParam = searchParams.get("student");
+  const selected: Id<"users"> | "__self__" | null =
+    studentParam === "salon" ? "__self__" : (studentParam as Id<"users">) ?? null;
+
+  const openThread = (id: Id<"users"> | "__self__") => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("student", id === "__self__" ? "salon" : id);
+    setSearchParams(next, { replace: true });
+  };
+  const closeThread = () => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("student");
+    setSearchParams(next, { replace: true });
+  };
+
   const threads = useQuery(api.app.listAdminThreads, {}) as
     | Array<{
         studentId: Id<"users">;
@@ -1684,14 +1706,14 @@ function AdminChatTab() {
       <AdminThreadsList
         threads={threads ?? []}
         loading={threads === undefined}
-        onOpen={(id) => setSelected(id)}
+        onOpen={openThread}
       />
     );
   }
   return (
     <AdminChatThread
       studentId={selected === "__self__" ? undefined : selected}
-      onBack={() => setSelected(null)}
+      onBack={closeThread}
     />
   );
 }

@@ -12,8 +12,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
+import { action, internalQuery, mutation, query } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { sendEmailsIndividually } from "./emails";
 
@@ -116,7 +116,8 @@ export const createForumThread = mutation({
     if (t.length > 120) throw new Error("Titre trop long (120 caractères maximum).");
     if (b.length < 10) throw new Error("Détaillez un peu votre question (10 caractères minimum).");
     if (b.length > 3000) throw new Error("Message trop long (3000 caractères maximum).");
-    await ctx.db.insert("forumThreads", {
+    const now = Date.now();
+    const threadId = await ctx.db.insert("forumThreads", {
       classId,
       authorId: user._id,
       title: t,
@@ -124,8 +125,16 @@ export const createForumThread = mutation({
       ...(subject ? { subject } : {}),
       resolved: false,
       answerCount: 0,
-      lastActivityAt: Date.now(),
-      createdAt: Date.now(),
+      lastActivityAt: now,
+      createdAt: now,
+    });
+
+    // Email aux membres de la classe (hors auteur) : nouvelle question.
+    await ctx.scheduler.runAfter(0, api.forum.notifyNewForumThread, {
+      threadId,
+      authorName: user.name ?? user.email ?? "Quelqu'un",
+      title: t,
+      excerpt: b.length > 220 ? `${b.slice(0, 220)}…` : b,
     });
     return true;
   },
@@ -514,5 +523,121 @@ export const deletePoll = mutation({
     for (const v of votes) await ctx.db.delete(v._id);
     await ctx.db.delete(pollId);
     return true;
+  },
+});
+
+// ============================================================================
+// Email « nouvelle question » (action schedulée par createForumThread)
+// ============================================================================
+
+/** Interne : emails des membres de la classe du fil, hors auteur et hors
+ *  comptes anonymes. */
+export const forumRecipientsInternal = internalQuery({
+  args: { threadId: v.id("forumThreads") },
+  handler: async (ctx, { threadId }) => {
+    const t = await ctx.db.get(threadId);
+    if (!t) return { emails: [] as string[], className: "" };
+    const members = await ctx.db
+      .query("users")
+      .withIndex("by_class", (q) => q.eq("classId", t.classId))
+      .collect();
+    return {
+      emails: members
+        .filter((u) => !u.isAnonymous && u._id !== t.authorId)
+        .map((u) => u.email ?? "")
+        .filter((e) => e.includes("@")),
+      className: (await ctx.db.get(t.classId))?.name ?? "",
+    };
+  },
+});
+
+/** Envoie l'email « nouvelle question sur le forum » aux membres de la
+ *  classe (hors auteur). Schedulé depuis createForumThread. */
+export const notifyNewForumThread = action({
+  args: {
+    threadId: v.id("forumThreads"),
+    authorName: v.string(),
+    title: v.string(),
+    excerpt: v.string(),
+  },
+  handler: async (ctx, { threadId, authorName, title, excerpt }) => {
+    const siteUrl = process.env.PUBLIC_SITE_URL || "";
+    const { emails, className } = await ctx.runQuery(
+      internal.forum.forumRecipientsInternal,
+      { threadId },
+    );
+    if (emails.length === 0) return true;
+
+    const subject = `Classheure — nouvelle question sur le forum${className ? ` (${className})` : ""}`;
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
+        <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Forum</h1>
+        </div>
+        <div style="padding:24px">
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
+            <strong>${authorName}</strong> a posé une nouvelle question${className ? ` en ${className}` : ""} :
+          </p>
+          <p style="margin:0 0 10px;font-size:15px;font-weight:bold">${title}</p>
+          <p style="margin:0 0 18px;font-size:14px;background:#101735;border:1px solid #2c3760;border-radius:10px;padding:14px;line-height:1.6">${excerpt}</p>
+          ${
+            siteUrl
+              ? `<a href="${siteUrl}/forum" style="display:inline-block;background:#4c6ef5;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;font-size:14px">Répondre sur le forum</a>`
+              : ""
+          }
+          <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
+            Vous recevez cet email car vous êtes membre de la classe.
+          </p>
+        </div>
+      </div>`;
+    await sendEmailsIndividually(emails, { subject, html }, "forum");
+    return true;
+  },
+});
+
+/** Dernier fil créé par quelqu'un d'autre (flux temps réel pour les
+ *  notifications navigateur). */
+export const getLatestForumThread = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const classId = user.classId ?? user.adminOfClassId ?? null;
+    if (!classId) return null;
+    const rows = await ctx.db
+      .query("forumThreads")
+      .withIndex("by_class", (q) => q.eq("classId", classId))
+      .order("desc")
+      .take(1);
+    const t = rows[0];
+    if (!t || t.authorId === user._id) return null;
+    return {
+      _id: t._id as string,
+      title: t.title,
+      authorName: (await ctx.db.get(t.authorId))?.name ?? "Quelqu'un",
+      createdAt: t.createdAt,
+    };
+  },
+});
+
+/** Dernier sondage créé par quelqu'un d'autre (notifications navigateur). */
+export const getLatestPoll = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const classId = user.classId ?? user.adminOfClassId ?? null;
+    if (!classId) return null;
+    const rows = await ctx.db
+      .query("polls")
+      .withIndex("by_class", (q) => q.eq("classId", classId))
+      .order("desc")
+      .take(1);
+    const p = rows[0];
+    if (!p || p.authorId === user._id) return null;
+    return {
+      _id: p._id as string,
+      question: p.question,
+      authorName: (await ctx.db.get(p.authorId))?.name ?? "Un encadrant",
+      createdAt: p.createdAt,
+    };
   },
 });

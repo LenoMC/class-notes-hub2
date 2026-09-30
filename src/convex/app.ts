@@ -1367,6 +1367,7 @@ export const sendChatMessage = mutation({
       ...(imageId ? { imageId } : {}),
       createdAt: Date.now(),
     });
+
   },
 });
 
@@ -1597,7 +1598,8 @@ export const sendAdminMessage = mutation({
         salon = false;
       }
     }
-    const now = Date.now();    await ctx.db.insert("adminMessages", {
+    const now = Date.now();
+    await ctx.db.insert("adminMessages", {
       studentId: student._id,
       authorId: user._id,
       authorSide: side,
@@ -2569,5 +2571,104 @@ export const claimAdminIfFirst = mutation({
     if (realUsers.some((u) => u.isAdmin)) return false;
     await ctx.db.patch(user._id, { isAdmin: true });
     return true;
+  },
+});
+
+// ---------- Notifications navigateur (queries « dernier événement ») ----------
+
+/** Dernier message du chat de classe : sert de flux temps réel au composant
+ *  de notifications navigateur (BrowserNotifier). */
+export const getLatestChatMessage = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const classId = user.classId ?? user.adminOfClassId ?? null;
+    if (!classId) return null;
+    const rows = await ctx.db
+      .query("chatMessages")
+      .withIndex("by_class", (q) => q.eq("classId", classId))
+      .order("desc")
+      .take(1);
+    const m = rows[0];
+    if (!m) return null;
+    const author = await ctx.db.get(m.authorId);
+    return {
+      _id: m._id as string,
+      text: m.text ?? "",
+      authorName: author?.name ?? author?.email ?? "Quelqu'un",
+      createdAt: m.createdAt,
+      mine: m.authorId === user._id,
+      kind: m.imageId ? ("image" as const) : m.ficheId ? ("fiche" as const) : ("text" as const),
+    };
+  },
+});
+
+/** Dernier message d'un admin reçu par l'utilisateur courant dans le chat
+ *  privé (côté élève) — notif « Un admin vous a écrit ». */
+export const getLatestAdminMessageForMe = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_student", (q) => q.eq("studentId", user._id))
+      .order("desc")
+      .take(1);
+    const m = rows.find(
+      (x) => x.authorSide === "admin" && x.authorId !== user._id,
+    );
+    if (!m) return null;
+    const author = await ctx.db.get(m.authorId);
+    return {
+      _id: m._id as string,
+      text: m.text,
+      authorName: author?.name ?? "Un admin",
+      createdAt: m.createdAt,
+    };
+  },
+});
+
+/** Dernier message écrit par un élève (côté admin global) — notif
+ *  « Un élève vous a écrit » avec lien direct vers l'administration. */
+export const getLatestStudentMessageForAdmin = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) return null;
+    const rows = await ctx.db.query("adminMessages").order("desc").take(30);
+    const m = rows.find((x) => x.authorSide === "student");
+    if (!m) return null;
+    const author = await ctx.db.get(m.authorId);
+    return {
+      _id: m._id as string,
+      text: m.text,
+      authorName: author?.name ?? author?.email ?? "Un élève",
+      createdAt: m.createdAt,
+      studentId: m.studentId as string,
+    };
+  },
+});
+
+/** Dernier message du salon des admins écrit par un AUTRE admin
+ *  (notifications navigateur, côté admin global). */
+export const getLatestSalonMessage = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!isGlobalAdmin(user)) return null;
+    const rows = await ctx.db
+      .query("adminMessages")
+      .withIndex("by_salon", (q) => q.eq("salon", true))
+      .order("desc")
+      .take(10);
+    const m = rows.find((x) => x.authorId !== user._id);
+    if (!m) return null;
+    const author = await ctx.db.get(m.authorId);
+    return {
+      _id: m._id as string,
+      text: m.text,
+      authorName: author?.name ?? "Un admin",
+      createdAt: m.createdAt,
+    };
   },
 });

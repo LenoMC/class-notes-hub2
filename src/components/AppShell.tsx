@@ -19,6 +19,7 @@ import { NavLink, useNavigate } from "react-router";
 import type { ReactNode } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { BrowserNotifier } from "@/components/BrowserNotifier";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Accueil", icon: LayoutDashboard },
@@ -151,6 +152,8 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Notifications navigateur temps réel (chat, forum, sondages) */}
+      <BrowserNotifier />
       {/* Topbar */}
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 backdrop-blur-md">
         <div className="mx-auto max-w-6xl px-4">

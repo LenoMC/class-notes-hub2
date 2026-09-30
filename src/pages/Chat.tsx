@@ -49,6 +49,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 function initialsOf(name: string | null | undefined, email: string | null | undefined) {
@@ -237,8 +238,26 @@ export default function Chat() {
 
   const noClass = user && !user.classId && !user.adminOfClassId;
 
-  // Onglets : Chat de classe / Chat privé avec les admins (🔒)
-  const [tab, setTab] = useState<"class" | "private">("class");
+  // Onglets : Chat de classe / Chat privé avec les admins (🔒).
+  // Onglet initial pilotable par URL (?tab=private) pour les notifications.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<"class" | "private">(
+    searchParams.get("tab") === "private" ? "private" : "class",
+  );
+
+  // Réagit aussi aux changements d'URL (clic sur une notification alors
+  // que la page est déjà ouverte).
+  useEffect(() => {
+    if (searchParams.get("tab") === "private") setTab("private");
+  }, [searchParams]);
+
+  const switchTab = (t: "class" | "private") => {
+    setTab(t);
+    const next = new URLSearchParams(searchParams);
+    if (t === "private") next.set("tab", "private");
+    else next.delete("tab");
+    setSearchParams(next, { replace: true });
+  };
   const adminChatUnread = useQuery(api.app.getMyAdminChatUnread, {}) as
     | number
     | undefined;
@@ -261,7 +280,7 @@ export default function Chat() {
       <div className="mb-4 grid w-full max-w-md grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
         <button
           type="button"
-          onClick={() => setTab("class")}
+          onClick={() => switchTab("class")}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
             tab === "class"
@@ -273,7 +292,7 @@ export default function Chat() {
         </button>
         <button
           type="button"
-          onClick={() => setTab("private")}
+          onClick={() => switchTab("private")}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
             tab === "private"
