@@ -1097,6 +1097,7 @@ type FileRow = {
   hasFile: boolean;
   storageId: Id<"_storage"> | null;
   externalUrl: string | null;
+  forDate: string | null;
 };
 
 function SlotDialog({
@@ -1112,7 +1113,12 @@ function SlotDialog({
   date: string | null; // date du jour cliqué (YYYY-MM-DD), pour l'exception ponctuelle
   onClose: () => void;
 }) {
-  const files = useQuery(api.app.listFilesForSlot, { slotId: slot._id });
+  // Fiches visées par CE jour précis (celui où le cours a été cliqué) :
+  // chaque semaine voit ses propres fiches, pas celles des autres semaines.
+  const files = useQuery(
+    api.app.listFilesForSlot,
+    date ? { slotId: slot._id, withDate: date } : { slotId: slot._id },
+  );
   const setException = useMutation(api.app.setSlotException);
   const deleteException = useMutation(api.app.deleteSlotException);
   const [showUpload, setShowUpload] = useState(false);
@@ -1249,7 +1255,7 @@ function SlotDialog({
               </Button>
             )}
             {canEdit && showUpload && (
-              <UploadForm slotId={slot._id} onDone={() => setShowUpload(false)} />
+              <UploadForm slotId={slot._id} date={date} onDone={() => setShowUpload(false)} />
             )}
           </>
         )}
@@ -1389,9 +1395,11 @@ function DownloadButton({
 
 function UploadForm({
   slotId,
+  date,
   onDone,
 }: {
   slotId: Id<"timetableSlots">;
+  date: string | null;
   onDone: () => void;
 }) {
   const addFile = useMutation(api.app.addFileMeta);
@@ -1402,6 +1410,8 @@ function UploadForm({
   const [file, setFile] = useState<File | null>(null);
   const [externalUrl, setExternalUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+  // Date visée : préremplie avec le jour cliqué, modifiable.
+  const [forDate, setForDate] = useState<string>(date ?? "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1441,8 +1451,13 @@ function UploadForm({
         bytes,
         storageId,
         externalUrl: externalUrl.trim() || undefined,
+        forDate: forDate.trim() || undefined,
       });
-      toast.success("Document publié. Il est visible par la classe immédiatement.");
+      toast.success(
+        forDate.trim()
+          ? `Document publié pour le ${forDate.trim().split("-").reverse().join("/")}.`
+          : "Document publié. Il est visible par la classe immédiatement.",
+      );
       setTitle("");
       setDescription("");
       setFile(null);
@@ -1477,6 +1492,19 @@ function UploadForm({
         >
           <Link2 className="size-4" /> Fiche de cours
         </Button>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="fiche-date">Date du cours</Label>
+        <Input
+          id="fiche-date"
+          type="date"
+          value={forDate}
+          onChange={(e) => setForDate(e.target.value)}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Préremplie avec le jour cliqué : la fiche n'apparaîtra dans l'EDT
+          que ce jour-là.
+        </p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="up-title">Titre</Label>

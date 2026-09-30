@@ -195,6 +195,9 @@ const schema = defineSchema(
       bytes: v.optional(v.number()),
       storageId: v.optional(v.id("_storage")),
       externalUrl: v.optional(v.string()),
+      // Date visée du cours/devoir ("YYYY-MM-DD") : la fiche n'apparaît dans
+      // l'EDT que pour ce jour-là (au lieu de toutes les semaines).
+      forDate: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_slot", ["slotId"]),
 

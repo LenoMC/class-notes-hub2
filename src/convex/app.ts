@@ -2113,14 +2113,19 @@ export const deleteSlot = mutation({
 // ---------- Fichiers cours / devoirs ----------
 
 export const listFilesForSlot = query({
-  args: { slotId: v.id("timetableSlots") },
-  handler: async (ctx, { slotId }) => {
+  // withDate : ne renvoie que les fiches visées ce jour-là (datées) — utilisé
+  // par la grille EDT. Sans withDate : toutes les fiches du créneau.
+  args: { slotId: v.id("timetableSlots"), withDate: v.optional(v.string()) },
+  handler: async (ctx, { slotId, withDate }) => {
     const rows = await ctx.db
       .query("courseFiles")
       .withIndex("by_slot", (q) => q.eq("slotId", slotId))
       .collect();
-    rows.sort((a, b) => a.createdAt - b.createdAt);
-    return rows.map((f) => ({
+    const filtered = withDate
+      ? rows.filter((f) => (f.forDate ?? null) === withDate)
+      : rows;
+    filtered.sort((a, b) => a.createdAt - b.createdAt);
+    return filtered.map((f) => ({
       _id: f._id,
       title: f.title,
       kind: f.kind,
@@ -2131,6 +2136,7 @@ export const listFilesForSlot = query({
       hasFile: !!f.storageId,
       storageId: f.storageId ?? null,
       externalUrl: f.externalUrl ?? null,
+      forDate: f.forDate ?? null,
     }));
   },
 });
@@ -2146,6 +2152,8 @@ export const addFileMeta = mutation({
     bytes: v.optional(v.number()),
     storageId: v.optional(v.id("_storage")),
     externalUrl: v.optional(v.string()),
+    // Date visée (AAAA-MM-JJ) : la fiche est datée du cours du jour.
+    forDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -2256,6 +2264,7 @@ export const listClassFiles = query({
       hasFile: boolean;
       storageId: Id<"_storage"> | null;
       externalUrl: string | null;
+      forDate: string | null;
       slotId: Id<"timetableSlots">;
       day: string;
       start: string;
@@ -2279,6 +2288,7 @@ export const listClassFiles = query({
       hasFile: !!f.storageId,
       storageId: f.storageId ?? null,
       externalUrl: f.externalUrl ?? null,
+      forDate: f.forDate ?? null,
       slotId: slot._id,
           day: slot.day,
           start: slot.start,
