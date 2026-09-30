@@ -1113,37 +1113,13 @@ function SlotDialog({
   onClose: () => void;
 }) {
   const files = useQuery(api.app.listFilesForSlot, { slotId: slot._id });
-  const setCancelled = useMutation(api.app.setSlotCancelled);
   const setException = useMutation(api.app.setSlotException);
   const deleteException = useMutation(api.app.deleteSlotException);
   const [showUpload, setShowUpload] = useState(false);
-  const [showCancel, setShowCancel] = useState(false);
-  const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
   const eps = isEpsSubject(slot.subject);
   // Exception ponctuelle déjà posée pour cette date précise
   const punctual = exceptionForDate(slot, date);
-
-  const handleCancelToggle = async () => {
-    setWorking(true);
-    try {
-      await setCancelled({
-        slotId: slot._id,
-        cancelled: !slot.cancelled,
-        reason: reason.trim() || undefined,
-      });
-      toast.success(
-        slot.cancelled
-          ? "Cours rétabli dans l'emploi du temps."
-          : "Cours marqué comme annulé.",
-      );
-      onClose();
-    } catch {
-      toast.error("Action impossible.");
-    } finally {
-      setWorking(false);
-    }
-  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -1296,61 +1272,8 @@ function SlotDialog({
 
         {canEdit && (
           <div className="border-t border-border/60 pt-3 space-y-2">
-            {!eps && !showCancel && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setShowCancel(true)}
-              >
-                {slot.cancelled ? (
-                  <>
-                    <RotateCcw className="size-4 mr-1.5" /> Rétablir ce cours
-                  </>
-                ) : (
-                  <>
-                    <Ban className="size-4 mr-1.5 text-destructive" /> Annuler ce cours
-                  </>
-                )}
-              </Button>
-            )}
-            {!eps && showCancel && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleCancelToggle();
-                }}
-                className="space-y-2"
-              >
-                <Label htmlFor="cancel-reason">Motif (visible par la classe)</Label>
-                <Input
-                  id="cancel-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="Professeur absent, sortie scolaire…"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="submit"
-                    variant={slot.cancelled ? "default" : "destructive"}
-                    className="flex-1"
-                    disabled={working}
-                  >
-                    {working
-                      ? "…"
-                      : slot.cancelled
-                        ? "Confirmer le rétablissement"
-                        : "Confirmer l'annulation"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setShowCancel(false)}
-                  >
-                    Retour
-                  </Button>
-                </div>
-              </form>
-            )}
+            {/* Annulation / remplacement : uniquement via l'exception ponctuelle
+                « Cette date uniquement » ci-dessus (un seul mécanisme). */}
             {/* Les responsables modifient ; seuls les admins globaux suppriment */}
             <Button
               variant="ghost"
