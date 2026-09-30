@@ -34,8 +34,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { StudentAdminChatPanel } from "@/components/StudentAdminChat";
+import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { useMutation, useQuery } from "convex/react";
 import {
+  ArrowDown,
   Download,
   ExternalLink,
   FileText,
@@ -138,7 +140,12 @@ export default function Chat() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ficheSearch, setFicheSearch] = useState("");
   const [toDelete, setToDelete] = useState<ChatMessage | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Scroll collé en bas (suit aussi les images qui chargent via contentTick)
+  const [contentTick, setContentTick] = useState(0);
+  const { ref: scrollRef, atBottom, scrollToBottom } = useChatScroll([
+    messages?.length,
+    contentTick,
+  ]);
 
   const authorNames = new Map<string, { name: string | null; email: string | null }>();
   if (members) {
@@ -146,12 +153,6 @@ export default function Chat() {
       authorNames.set(m._id, { name: m.name, email: m.email });
     }
   }
-
-  // Défilement automatique vers le dernier message
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages?.length]);
 
   // Page ouverte = section vue : efface le point rouge de la navbar
   useEffect(() => {
@@ -335,10 +336,11 @@ export default function Chat() {
               </CardDescription>
             </CardHeader>
 
-            <div
-              ref={scrollRef}
-              className="h-[52vh] min-h-[320px] flex-1 space-y-2.5 overflow-y-auto px-4 py-4"
-            >
+            <div className="relative flex-1">
+              <div
+                ref={scrollRef}
+                className="h-[52vh] min-h-[320px] space-y-2.5 overflow-y-auto px-4 py-4"
+              >
               {!messages ? (
                 <div className="space-y-3">
                   <Skeleton className="h-10 w-2/3" />
@@ -395,7 +397,14 @@ export default function Chat() {
                             m.text.split("\n").map((line, j) => (
                               <p key={j}>{line}</p>
                             ))}
-                          {m.imageId && <ChatImage imageId={m.imageId} onZoom={setZoomImage} mine={m.mine} />}
+                          {m.imageId && (
+                            <ChatImage
+                              imageId={m.imageId}
+                              onZoom={setZoomImage}
+                              mine={m.mine}
+                              onLoaded={() => setContentTick((t) => t + 1)}
+                            />
+                          )}
                           {m.fiche && (
                             <a
                               href={
@@ -448,6 +457,19 @@ export default function Chat() {
                     </div>
                   );
                 })
+              )}
+              </div>
+
+              {/* Bouton « revenir en bas » quand on a remonté le fil */}
+              {!atBottom && (
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom(true)}
+                  className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary cursor-pointer"
+                  aria-label="Revenir aux derniers messages"
+                >
+                  <ArrowDown className="size-4" />
+                </button>
               )}
             </div>
 
@@ -699,10 +721,12 @@ function ChatImage({
   imageId,
   onZoom,
   mine,
+  onLoaded,
 }: {
   imageId: string;
   onZoom: (url: string) => void;
   mine: boolean;
+  onLoaded?: () => void;
 }) {
   const url = useQuery(
     api.app.getFileUrl,
@@ -724,6 +748,7 @@ function ChatImage({
         alt="Image partagée dans le chat"
         className="max-h-64 max-w-[16rem] w-auto object-cover"
         loading="lazy"
+        onLoad={() => onLoaded?.()}
       />
     </button>
   );

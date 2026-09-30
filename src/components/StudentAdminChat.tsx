@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useChatScroll } from "@/hooks/use-chat-scroll";
+import { ArrowDown } from "lucide-react";
 import { Lock, MessageSquareLock, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,11 +20,15 @@ export function StudentAdminChatPanel() {
   const { user } = useAuth();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const messages = useQuery(api.app.listAdminMessages, {}) as
     | Array<{ _id: string; text: string; createdAt: number; mine: boolean; side: string }>
     | undefined;
+  // Scroll collé en bas (doit être appelé après la déclaration de `messages`)
+  const { ref: scrollRef, atBottom, scrollToBottom } = useChatScroll([
+    messages?.length,
+  ]);
+
   const send = useMutation(api.app.sendAdminMessage);
   const markRead = useMutation(api.app.markAdminChatReadAsStudent);
   const setTyping = useMutation(api.app.setTyping);
@@ -39,11 +45,6 @@ export function StudentAdminChatPanel() {
     void markRead({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages?.length]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,9 +78,10 @@ export function StudentAdminChatPanel() {
         </CardDescription>
       </CardHeader>
 
+      <div className="relative flex-1">
       <div
         ref={scrollRef}
-        className="h-[52vh] min-h-[320px] flex-1 space-y-2.5 overflow-y-auto px-4 py-4"
+        className="h-[52vh] min-h-[320px] space-y-2.5 overflow-y-auto px-4 py-4"
       >
         {!messages ? (
           <div className="space-y-3">
@@ -131,6 +133,19 @@ export function StudentAdminChatPanel() {
             <TypingBubble name={(typingNames ?? []).join(", ")} />
           </div>
         )}
+      </div>
+
+      {/* Bouton « revenir en bas » quand on a remonté le fil */}
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom(true)}
+          className="absolute bottom-20 right-6 z-10 flex size-9 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary cursor-pointer"
+          aria-label="Revenir aux derniers messages"
+        >
+          <ArrowDown className="size-4" />
+        </button>
+      )}
       </div>
 
       <form
