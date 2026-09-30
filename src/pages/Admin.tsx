@@ -28,8 +28,10 @@ import { periodLabel, periodsForDay } from "@/lib/periods";
 import { TypingBubble } from "@/components/TypingDots";
 import {
   dayToUTC,
+  mondayOfUTC,
   monthWeeks,
   schoolYearStart,
+  todayDayString,
   utcToDay,
   weekLabelFor,
   DAY_MS,
@@ -589,7 +591,33 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
   const slots = useQuery(api.app.listSlots, { classId, week: week === "AB" ? undefined : week });
   const upsert = useMutation(api.app.upsertSlot);
   const remove = useMutation(api.app.deleteSlot);
+  // Calendrier (ancre + vacances) : pour déduire la semaine A/B d'une date.
+  const anchor = useQuery(api.app.getWeekAnchor, {});
+  const holidays = useQuery(api.app.listHolidays, {});
+  const [date, setDate] = useState<string>("");
   const [day, setDay] = useState<string>("Lundi");
+  const [weekAuto, setWeekAuto] = useState<null | "A" | "B">(null);
+
+  // Quand une date est choisie : le jour ET la semaine A/B sont déduits
+  // automatiquement — le cours s'affichera exactement ce jour-là.
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setWeekAuto(null);
+      return;
+    }
+    const d = new Date(dayToUTC(date));
+    const dow = d.getUTCDay(); // 0 = dimanche
+    if (dow === 0 || dow === 6) {
+      setWeekAuto(null);
+      return;
+    }
+    setDay(["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"][dow]);
+    if (anchor && holidays) {
+      const label = weekLabelFor(mondayOfUTC(dayToUTC(date)), anchor.startDay, holidays);
+      // "vac" = la date tombe pendant des vacances : on garde A/B manuel.
+      setWeekAuto(label === "vac" ? null : label);
+    }
+  }, [date, anchor, holidays]);
   const [start, setStart] = useState("08:15");
   const [end, setEnd] = useState("09:10");
   const [subject, setSubject] = useState("");
@@ -613,9 +641,15 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
         subject: subject.trim(),
         teacher: teacher.trim() || undefined,
         room: room.trim() || undefined,
-        weekType,
+        // Une date saisie = la semaine de ce jour-là (A ou B), même si le
+        // sélecteur global dit autre chose.
+        weekType: weekAuto ?? weekType,
       });
-      toast.success("Créneau ajouté.");
+      toast.success(
+        weekAuto
+          ? `Créneau ajouté : ${day} (semaine ${weekAuto}).`
+          : "Créneau ajouté.",
+      );
       setSubject("");
       setTeacher("");
       setRoom("");
@@ -643,6 +677,30 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
     <div className="grid gap-4 lg:grid-cols-2">
       <form onSubmit={handleAdd} className="space-y-3 rounded-lg border border-border/70 bg-secondary/30 p-4">
         <p className="font-medium text-sm">Ajouter un créneau</p>
+
+        {/* Date du cours : déduit automatiquement le jour et la semaine A/B */}
+        <div className="space-y-1.5">
+          <Label htmlFor="adm-date">Date du cours (recommandé)</Label>
+          <Input
+            id="adm-date"
+            type="date"
+            value={date}
+            min="2026-09-01"
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full rounded-md border border-input bg-input px-3 py-2 text-sm"
+          />
+          {date && !weekAuto && (
+            <p className="text-xs text-amber-300">
+              Week-end : choisissez plutôt un jour en semaine (lundi→vendredi).
+            </p>
+          )}
+          {date && weekAuto && (
+            <p className="text-xs text-muted-foreground">
+              Sera ajouté le <strong>{day}</strong> en <strong>semaine {weekAuto}</strong> — visible exactement ce jour-là.
+            </p>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label htmlFor="adm-day">Jour</Label>
@@ -714,7 +772,9 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label>Semaine (cochez A ou B)</Label>
+          <Label>
+            Semaine {weekAuto ? `(auto : ${weekAuto})` : "(cochez A ou B)"}
+          </Label>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(
               [
@@ -726,9 +786,10 @@ function ClassSlotManager({ classId }: { classId: Id<"classes"> }) {
               <Button
                 key={w}
                 type="button"
-                variant={weekType === w ? "default" : "ghost"}
+                variant={weekAuto ? (weekAuto === w ? "default" : "ghost") : weekType === w ? "default" : "ghost"}
                 size="sm"
                 className="flex-1 rounded-none"
+                disabled={!!weekAuto}
                 onClick={() => setWeekType(w)}
               >
                 {label}
