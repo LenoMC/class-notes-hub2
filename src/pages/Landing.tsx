@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQuery } from "convex/react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router";
 
 const FEATURES = [
@@ -49,6 +50,15 @@ export default function Landing() {
   const classCount = classes.length;
 
   const goToApp = () => navigate("/dashboard");
+
+  // Redirection automatique : si une session est déjà ouverte, la page
+  // d'accueil publique mène directement au tableau de bord — pas besoin
+  // de cliquer sur « Accéder à mon espace ».
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [isLoading, isAuthenticated, navigate]);
   // Le CTA principal mène directement au formulaire d'inscription.
   const goToSignUp = () => navigate("/auth?mode=signup&returnTo=%2Fdashboard");
   const goToSignIn = () => navigate("/auth?returnTo=%2Fdashboard");
