@@ -66,6 +66,11 @@ export function AppShell({
   // Point rouge Administration : approbations + chat privé (admins uniquement).
   const adminBadge = useAdminBadge();
 
+  // Total des nouveautés affiché sur le bouton menu (mobile) : chat, forum,
+  // sondages +, pour les admins, approbations et chat privé.
+  const unreadTotal = unread ? unread.chat + unread.forum + unread.sondages : 0;
+  const burgerBadge = unreadTotal + (isAdmin ? adminBadge : 0);
+
   const initials = (user?.name || user?.email || "?")
     .split(/[\s.@]+/)
     .filter(Boolean)
@@ -154,11 +159,21 @@ export function AppShell({
             <Button
               variant="ghost"
               size="icon"
-              className="size-9 lg:hidden"
+              className="relative size-9 lg:hidden"
               onClick={() => setMobileOpen((v) => !v)}
-              aria-label="Menu"
+              aria-label={
+                burgerBadge > 0 ? `Menu — ${burgerBadge} nouveauté(s)` : "Menu"
+              }
             >
               {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+              {!mobileOpen && burgerBadge > 0 && (
+                <span
+                  className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground shadow"
+                  aria-label={`${burgerBadge} nouveautés`}
+                >
+                  {burgerBadge > 9 ? "9+" : burgerBadge}
+                </span>
+              )}
             </Button>
 
             {/* Logo */}
