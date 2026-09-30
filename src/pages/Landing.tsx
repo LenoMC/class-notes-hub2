@@ -156,8 +156,8 @@ export default function Landing() {
       {/* Fonctionnement */}
       <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
         <Card className="panel border-border/70 overflow-hidden">
-          <div className="grid lg:grid-cols-2 gap-8 p-5 sm:p-8 lg:p-10 items-center">
-            <div>
+          <div className="grid min-w-0 lg:grid-cols-2 gap-8 p-5 sm:p-8 lg:p-10 items-center">
+            <div className="min-w-0">
               <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
                 Trois étapes, rien de plus
               </h2>
@@ -171,7 +171,7 @@ export default function Landing() {
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary font-mono text-xs">
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium">{title}</p>
                       <p className="text-sm text-muted-foreground">{text}</p>
                     </div>
@@ -183,13 +183,11 @@ export default function Landing() {
               {/* Aperçu réel : créneau d'emploi du temps */}
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Emploi du temps — lundi · semaine A
-              </p>
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="shrink-0 text-center">
-                    <p className="font-mono text-sm font-bold text-primary">08:00</p>
-                    <p className="text-[10px] text-muted-foreground">09:00</p>
-                  </div>
+              </p>                <div className="rounded-xl border border-border/60 bg-background/60 p-4">                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <div className="shrink-0 text-center">
+                      <p className="font-mono text-sm font-bold text-primary">08:00</p>
+                      <p className="text-[10px] text-muted-foreground">09:00</p>
+                    </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
@@ -212,10 +210,9 @@ export default function Landing() {
               {/* Aperçu réel : fiche de cours rattachée */}
               <p className="mb-3 mt-5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Devoirs du créneau
-              </p>
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15">
+              </p>                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15">
                     <FileText className="size-5 text-red-400" />
                   </div>
                   <div className="min-w-0 flex-1">
