@@ -1890,7 +1890,7 @@ function AdminChatThread({
       <div className="relative">
       <div
         ref={scrollRef}
-        className="max-h-[420px] min-h-[280px] space-y-2 overflow-y-auto px-4 py-3 scrollbar-none"
+        className="h-[52vh] min-h-[320px] space-y-2 overflow-y-auto px-4 py-3 scrollbar-none"
       >
         {!messages ? (
           <Skeleton className="h-20 w-full" />
