@@ -183,7 +183,7 @@ export default function Landing() {
               {/* Aperçu réel : créneau d'emploi du temps */}
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Emploi du temps — lundi · semaine A
-              </p>                <div className="rounded-xl border border-border/60 bg-background/60 p-4">                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              </p>                <div className="rounded-xl border border-border/60 bg-background/60 p-3 sm:p-4">                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="shrink-0 text-center">
                       <p className="font-mono text-sm font-bold text-primary">08:00</p>
                       <p className="text-[10px] text-muted-foreground">09:00</p>
@@ -210,13 +210,13 @@ export default function Landing() {
               {/* Aperçu réel : fiche de cours rattachée */}
               <p className="mb-3 mt-5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Devoirs du créneau
-              </p>                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+              </p>                  <div className="rounded-xl border border-border/60 bg-background/60 p-3 sm:p-4">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15">
                     <FileText className="size-5 text-red-400" />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-medium">DM n°3 — chapitre 4</p>
+                  <div className="min-w-40 flex-1">
+                    <p className="text-sm font-medium leading-snug">DM n°3 — chapitre 4</p>
                     <p className="text-xs text-muted-foreground">
                       PDF · publié par Mme Dupont
                     </p>
