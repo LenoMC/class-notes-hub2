@@ -81,7 +81,7 @@ export function StudentAdminChatPanel() {
       <div className="relative flex-1">
       <div
         ref={scrollRef}
-        className="h-[52vh] min-h-[320px] space-y-2.5 overflow-y-auto px-4 py-4"
+        className="h-[52vh] min-h-[320px] space-y-2.5 overflow-y-auto px-4 py-4 scrollbar-none"
       >
         {!messages ? (
           <div className="space-y-3">
