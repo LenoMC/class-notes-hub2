@@ -201,9 +201,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         const email = ((fd.get("email") as string) || "").trim().toLowerCase();
         // Vérifie que le domaine de l'adresse existe (faute de frappe ?)
         const deliverable = await verifyEmailDeliverable({ email });
-        if (!deliverable) {
+        if (!deliverable.ok) {
           // Erreur inline affichée en rouge sous le champ email
-          setEmailCheckError("Cette email n'existe pas");
+          setEmailCheckError(
+            deliverable.reason === "domaine"
+              ? "Ce domaine email n'existe pas (faute de frappe ?)"
+              : deliverable.reason === "syntaxe"
+                ? "Adresse email invalide"
+                : "Cette email n'existe pas",
+          );
           setIsLoading(false);
           return;
         }
@@ -305,6 +311,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       if (method === "email") {
         const email = ((fd.get("email") as string) || "").trim().toLowerCase();
+        // Vérifie d'abord que l'adresse peut recevoir un email (sinon le code
+        // partirait dans le vide).
+        const check = await verifyEmailDeliverable({ email });
+        if (!check.ok) {
+          setError(
+            check.reason === "domaine"
+              ? "Ce domaine email n'existe pas (faute de frappe ?)"
+              : check.reason === "syntaxe"
+                ? "Adresse email invalide"
+                : "Cette email n'existe pas",
+          );
+          setIsLoading(false);
+          return;
+        }
         await signIn("password", { flow: "reset", email });
         setPendingEmail(email);
         go("reset");

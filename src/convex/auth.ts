@@ -215,24 +215,53 @@ async function dnsQuery(name: string, type: "MX" | "A") {
   return data.Answer && data.Answer.length > 0;
 }
 
-/** Vérifie que le domaine d'un email peut recevoir du courrier (MX).
-    Détecte les fautes de frappe du type seressy@mial.com à l'inscription.
-    Retourne false seulement si le domaine n'a ni MX ni enregistrement A. */
+/** Vérification complète d'une adresse email avant d'envoyer un code :
+ *  1. syntaxe + domaine (MX/A via DNS, gratuit) — rejette les fautes de frappe ;
+ *  2. existence RÉELLE de la boîte via ZeroBounce (SMTP) si ZEROBOUNCE_API_KEY
+ *     est configurée — évite de gaspiller un envoi Brevo sur une adresse
+ *     invalide. Sans clé, on se contente du contrôle domaine. */
 export const verifyEmailDeliverable = action({
   args: { email: v.string() },
   handler: async (_ctx, { email }) => {
-    const domain = normalizeEmail(email).split("@")[1];
-    if (!domain || !domain.includes(".")) return false;
-    if (WELL_KNOWN_EMAIL_DOMAINS.includes(domain)) return true;
+    const normalized = normalizeEmail(email);
+    const domain = normalized.split("@")[1];
+    if (!normalized.includes("@") || !domain || !domain.includes(".")) {
+      return { ok: false, reason: "syntaxe" as const };
+    }
+    if (WELL_KNOWN_EMAIL_DOMAINS.includes(domain)) {
+      return { ok: true, reason: "domaine-connu" as const };
+    }
     try {
-      if (await dnsQuery(domain, "MX")) return true;
-      // Certains domaines rares n'acceptent que du A/AAAA
-      if (await dnsQuery(domain, "A")) return true;
-      return false;
+      const hasMx =
+        (await dnsQuery(domain, "MX")) || (await dnsQuery(domain, "A"));
+      if (!hasMx) return { ok: false, reason: "domaine" as const };
     } catch (err) {
-      // En cas d'erreur réseau (DNS indisponible), on ne bloque pas l'inscription
       console.warn("[auth] vérification DNS impossible :", err);
-      return true;
+    }
+
+    // ----- Contrôle SMTP de la boîte (ZeroBounce) -----
+    const apiKey = process.env.ZEROBOUNCE_API_KEY;
+    if (!apiKey) return { ok: true, reason: "domaine-seulement" as const };
+    try {
+      const res = await axios.get("https://api.zerobounce.net/v2/validate", {
+        params: { api_key: apiKey, email: normalized },
+        validateStatus: () => true,
+      });
+      if (res.status >= 400) {
+        console.warn("[auth] ZeroBounce HTTP", res.status);
+        return { ok: true, reason: "domaine-seulement" as const };
+      }
+      const status = (res.data as { status?: string })?.status;
+      // valid → la boîte existe ; catch-all → domaine qui accepte tout (on
+      // laisse passer) ; les autres (invalid, do_not_mail, spamtrap…)
+      // → adresse à rejeter.
+      if (status === "valid" || status === "catch-all") {
+        return { ok: true, reason: "smtp" as const };
+      }
+      return { ok: false, reason: "inexistante" as const };
+    } catch (err) {
+      console.warn("[auth] ZeroBounce a échoué :", err);
+      return { ok: true, reason: "domaine-seulement" as const };
     }
   },
 });
