@@ -68,14 +68,16 @@ export default function Landing() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
-      className="min-h-screen bg-background bg-grid relative"
+      className="min-h-screen bg-background bg-grid relative overflow-x-hidden"
     >
       <div className="absolute inset-0 bg-glow pointer-events-none h-[560px]" />
 
       {/* Header */}
       <header className="relative z-10 mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
-        <img src={logo} alt="Classheure" className="size-9 rounded-lg" />
-        <span className="text-lg font-semibold tracking-tight">Classheure</span>
+        <img src={logo} alt="Classheure" className="size-9 shrink-0 rounded-lg" />
+        <span className="hidden sm:inline text-lg font-semibold tracking-tight">
+          Classheure
+        </span>
         <span className="hidden sm:inline text-xs font-mono text-muted-foreground border border-border/70 rounded px-1.5 py-0.5">
           v1
         </span>
@@ -86,10 +88,12 @@ export default function Landing() {
             </Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={goToSignIn}>
+              <Button variant="ghost" size="sm" onClick={goToSignIn}>
                 Se connecter
               </Button>
-              <Button onClick={goToSignUp}>Créer un compte</Button>
+              <Button size="sm" onClick={goToSignUp}>
+                Créer un compte
+              </Button>
             </>
           )}
         </div>
@@ -101,7 +105,7 @@ export default function Landing() {
           <Terminal className="size-3.5 text-primary" />
           cours · devoirs · emploi du temps
         </Badge>
-        <h1 className="max-w-3xl text-4xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
+        <h1 className="max-w-3xl text-balance text-4xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
           La documentation de votre classe,{" "}
           <span className="text-gradient-bolt">au même endroit</span>
         </h1>
@@ -152,7 +156,7 @@ export default function Landing() {
       {/* Fonctionnement */}
       <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
         <Card className="panel border-border/70 overflow-hidden">
-          <div className="grid lg:grid-cols-2 gap-8 p-8 lg:p-10 items-center">
+          <div className="grid lg:grid-cols-2 gap-8 p-5 sm:p-8 lg:p-10 items-center">
             <div>
               <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
                 Trois étapes, rien de plus
@@ -215,7 +219,7 @@ export default function Landing() {
                     <FileText className="size-5 text-red-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">DM n°3 — chapitre 4</p>
+                    <p className="break-words text-sm font-medium">DM n°3 — chapitre 4</p>
                     <p className="text-xs text-muted-foreground">
                       PDF · publié par Mme Dupont
                     </p>
