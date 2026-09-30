@@ -232,7 +232,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ...(lastName ? { lastName } : {}),
         });
         if (result?.signingIn) {
-          toast.success("Compte créé. Bienvenue sur Classheure.");
+          toast.success("Compte créé. Bienvenue sur ClassHeure.");
           navigate(redirect, { replace: true });
         } else {
           setError("Impossible de créer le compte. Essayez à nouveau.");
@@ -263,7 +263,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         code,
       });
       if (result?.signingIn) {
-        toast.success("Email vérifié. Bienvenue sur Classheure.");
+        toast.success("Email vérifié. Bienvenue sur ClassHeure.");
         navigate(redirect, { replace: true });
       } else {
         setError(
@@ -414,7 +414,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <>
               <CardHeader className="text-center pb-4">
                 <button onClick={goHome} className="flex justify-center cursor-pointer" aria-label="Accueil">
-                  <img src={logo} alt="Classheure" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
+                  <img src={logo} alt="ClassHeure" width={72} height={72} className="rounded-2xl mb-4 mt-2 shadow-lg shadow-primary/20" />
                 </button>
                 <CardTitle className="text-2xl">Connexion</CardTitle>
                 <CardDescription className="mt-1">
@@ -759,7 +759,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground border-t border-border/60">
             <Link to="/" className="hover:text-primary transition-colors">
-              Classheure — cours, devoirs et emploi du temps
+              ClassHeure — cours, devoirs et emploi du temps
             </Link>
           </div>
         </Card>

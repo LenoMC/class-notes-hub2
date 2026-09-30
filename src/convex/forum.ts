@@ -437,11 +437,11 @@ export const sendPollEmails = action({
   handler: async (_ctx, { to, question, authorName }) => {
     if (to.length === 0) return;
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const subject = `Classheure — nouveau sondage : ${question}`;
+    const subject = `ClassHeure — nouveau sondage : ${question}`;
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Nouveau sondage</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — Nouveau sondage</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
@@ -454,7 +454,7 @@ export const sendPollEmails = action({
               : `<p style="font-size:13px;color:#8b93b8">Connectez-vous au site pour voter (menu Sondages).</p>`
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes membre de la classe sur Classheure.
+            Vous recevez cet email car vous êtes membre de la classe sur ClassHeure.
           </p>
         </div>
       </div>`;
@@ -568,11 +568,11 @@ export const notifyNewForumThread = action({
     );
     if (emails.length === 0) return true;
 
-    const subject = `Classheure — nouvelle question sur le forum${className ? ` (${className})` : ""}`;
+    const subject = `ClassHeure — nouvelle question sur le forum${className ? ` (${className})` : ""}`;
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Forum</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — Forum</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">

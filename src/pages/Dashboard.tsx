@@ -82,7 +82,7 @@ export default function Dashboard() {
   if (authLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
-        <img src="/logo.svg" alt="Classheure" className="size-10 animate-pulse rounded-lg" />
+        <img src="/logo.svg" alt="ClassHeure" className="size-10 animate-pulse rounded-lg" />
       </main>
     );
   }
@@ -182,7 +182,7 @@ function ApprovalGate({
           </div>
           <CardTitle className="text-xl">Vérification d'identité</CardTitle>
           <CardDescription>
-            Pour accéder à Classheure, envoyez une capture d'écran de votre profil
+            Pour accéder à ClassHeure, envoyez une capture d'écran de votre profil
             sur <strong>Arsene76</strong> (le site du collège) pour prouver que
             c'est bien vous.
           </CardDescription>

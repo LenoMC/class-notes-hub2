@@ -1,4 +1,4 @@
-// Envoi d'emails transactionnels Classheure — chaîne à 3 canaux :
+// Envoi d'emails transactionnels ClassHeure — chaîne à 3 canaux :
 //
 // 1. BREVO (recommandé, 300 emails/jour gratuits) : il suffit de vérifier
 //    UNE adresse d'expédition (clic sur un lien de confirmation) — AUCUN
@@ -27,13 +27,13 @@ const FREEBUFF_EMAIL_KEY = "fb_email_2crN1hqIArZP2bEfvjp5Qik4";
 /** Expéditeur Resend (si un domaine est vérifié un jour) :
  *  « onboarding@resend.dev » tant que EMAIL_FROM n'est pas défini. */
 function fromAddress(): string {
-  return process.env.EMAIL_FROM || "Classheure <onboarding@resend.dev>";
+  return process.env.EMAIL_FROM || "ClassHeure <onboarding@resend.dev>";
 }
 
 /** Adresse d'expédition Brevo : doit être VÉRIFIÉE dans l'espace Brevo
- *  (Senders & IP → Senders). Par défaut : l'adresse du compte. */
+ *  (Senders & IP → Senders). Par défaut : l'adresse vérifiée du compte. */
 function brevoSender(): string {
-  return process.env.BREVO_SENDER_EMAIL || "seressy02@gmail.com";
+  return process.env.BREVO_SENDER_EMAIL || "classheurev1@gmail.com";
 }
 
 /** Canal 1 : Brevo — marche sans domaine une fois l'adresse d'expédition
@@ -49,7 +49,7 @@ async function sendViaBrevo(
     const res = await axios.post(
       "https://api.brevo.com/v3/smtp/email",
       {
-        sender: { name: "Classheure", email: brevoSender() },
+        sender: { name: "ClassHeure", email: brevoSender() },
         to: [{ email: to }],
         subject: content.subject,
         htmlContent: content.html,
@@ -153,9 +153,9 @@ export const sendTestEmail = action({
     const channel = await sendSingleEmail(
       to,
       {
-        subject: "Classheure — test d'envoi d'email",
+        subject: "ClassHeure — test d'envoi d'email",
         html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#0b1020;color:#e6e9f5;border-radius:12px">
-          <h1 style="color:#8fa5ff;font-size:18px">Classheure</h1>
+          <h1 style="color:#8fa5ff;font-size:18px">ClassHeure</h1>
           <p style="font-size:14px;line-height:1.6">✅ La chaîne d'envoi d'emails fonctionne : attendez-vous à recevoir les codes, sondages et notifications par ce canal.</p>
         </div>`,
       },

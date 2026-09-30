@@ -46,21 +46,21 @@ function normalizeEmail(email: string): string {
 async function sendCodeEmail(email: string, token: string, kind: "verify" | "reset") {
   const subject =
     kind === "verify"
-      ? "Votre code de vérification Classheure"
-      : "Votre code de réinitialisation Classheure";
+      ? "Votre code de vérification ClassHeure"
+      : "Votre code de réinitialisation ClassHeure";
   const title =
     kind === "verify"
       ? "Vérification de votre adresse email"
       : "Réinitialisation de votre mot de passe";
   const intro =
     kind === "verify"
-      ? "Bienvenue sur Classheure ! Saisissez ce code à 6 chiffres sur le site pour activer votre compte."
+      ? "Bienvenue sur ClassHeure ! Saisissez ce code à 6 chiffres sur le site pour activer votre compte."
       : "Saisissez ce code à 6 chiffres sur le site pour choisir un nouveau mot de passe.";
 
   const html = `
     <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
       <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-        <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — ${title}</h1>
+        <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — ${title}</h1>
       </div>
       <div style="padding:24px;text-align:center">
         <p style="margin:0 0 18px;font-size:14px;line-height:1.6">${intro}</p>
@@ -101,7 +101,7 @@ async function sendCodeSms(phone: string, token: string) {
     `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
     {
       recipients: [phone],
-      message: `Classheure : votre code de réinitialisation est ${token}. Il expire dans 15 minutes.`,
+      message: `ClassHeure : votre code de réinitialisation est ${token}. Il expire dans 15 minutes.`,
     },
     {
       headers: { "x-api-key": apiKey, "Content-Type": "application/json" },

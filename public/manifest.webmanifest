@@ -1,6 +1,6 @@
 {
-  "name": "Classheure",
-  "short_name": "Classheure",
+  "name": "ClassHeure",
+  "short_name": "ClassHeure",
   "description": "Cours, devoirs et emploi du temps de votre classe.",
   "start_url": "/",
   "display": "standalone",

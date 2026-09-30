@@ -121,7 +121,7 @@ export default function Forum() {
   if (authLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
-        <img src="/logo.svg" alt="Classheure" className="size-10 animate-pulse rounded-lg" />
+        <img src="/logo.svg" alt="ClassHeure" className="size-10 animate-pulse rounded-lg" />
       </main>
     );
   }

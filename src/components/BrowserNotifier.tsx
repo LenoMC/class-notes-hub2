@@ -71,7 +71,7 @@ export function BrowserNotifier() {
           if (p === "granted") {
             toast.success("Notifications activées !");
             try {
-              new Notification("Classheure", {
+              new Notification("ClassHeure", {
                 body: "Vous serez prévenu des nouveaux messages, questions et sondages.",
                 icon: notifIcon(),
               });

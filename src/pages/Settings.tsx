@@ -456,7 +456,7 @@ export default function Settings() {
                   <AlertDialogDescription>
                     Cette action est irréversible : votre compte, vos sessions
                     et votre capture de preuve seront effacés. Vous ne pourrez
-                    plus accéder à Classheure avec cet email sans recréer un
+                    plus accéder à ClassHeure avec cet email sans recréer un
                     compte (et repasser par l'approbation d'accès).
                   </AlertDialogDescription>
                 </AlertDialogHeader>

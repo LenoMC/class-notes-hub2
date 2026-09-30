@@ -74,9 +74,9 @@ export default function Landing() {
 
       {/* Header */}
       <header className="relative z-10 mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
-        <img src={logo} alt="Classheure" className="size-9 shrink-0 rounded-lg" />
+        <img src={logo} alt="ClassHeure" className="size-9 shrink-0 rounded-lg" />
         <span className="hidden sm:inline text-lg font-semibold tracking-tight">
-          Classheure
+          ClassHeure
         </span>
         <span className="hidden sm:inline text-xs font-mono text-muted-foreground border border-border/70 rounded px-1.5 py-0.5">
           v1
@@ -110,7 +110,7 @@ export default function Landing() {
           <span className="text-gradient-bolt">au même endroit</span>
         </h1>
         <p className="mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-          Classheure rassemble l'emploi du temps, les fiches de cours et les devoirs
+          ClassHeure rassemble l'emploi du temps, les fiches de cours et les devoirs
           de votre classe dans une interface sobre et fiable — semaines A et B
           comprises. Créez votre compte, sélectionnez votre classe, et retrouvez
           chaque ressource à sa place.
@@ -254,7 +254,7 @@ export default function Landing() {
       </section>
 
       <footer className="relative z-10 border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-        Classheure — gestion de cours et de devoirs pour les classes
+        ClassHeure — gestion de cours et de devoirs pour les classes
       </footer>
     </motion.div>
   );

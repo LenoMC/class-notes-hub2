@@ -205,11 +205,11 @@ export const sendApprovalEmails = action({
     // URL publique du SITE (pas du backend Convex !). À définir via
     // `bunx convex env set PUBLIC_SITE_URL https://votre-site.fr`.
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const subject = `Classheure — nouvelle demande d'accès à approuver (${userName})`;
+    const subject = `ClassHeure — nouvelle demande d'accès à approuver (${userName})`;
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Nouvelle demande d'accès</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — Nouvelle demande d'accès</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
@@ -223,7 +223,7 @@ export const sendApprovalEmails = action({
               : `<p style="margin:0 0 8px;font-size:14px">Ouvrez l'administration du site (onglet « Approbations ») pour examiner la preuve.</p>`
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de Classheure.
+            Vous recevez cet email car vous êtes administrateur global de ClassHeure.
           </p>
         </div>
       </div>`;
@@ -254,7 +254,7 @@ export const sendApprovalSms = action({
       return;
     }
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
-    const text = `Classheure : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
+    const text = `ClassHeure : ${userName} (${userEmail}) attend l'approbation de sa preuve Arsene76.${siteUrl ? ` ${siteUrl}/admin` : ""}`;
     for (const phone of phones) {
       try {
         const res = await axios.post(
@@ -297,7 +297,7 @@ export const testSms = action({
     try {
       const res = await axios.post(
         `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`,
-        { recipients: [phone], message: "Test Classheure ✓" },
+        { recipients: [phone], message: "Test ClassHeure ✓" },
         {
           headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
           validateStatus: () => true,
@@ -336,7 +336,7 @@ export const sendApprovalDiscordDm = action({
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
     };
-    // Embed aux couleurs de Classheure
+    // Embed aux couleurs de ClassHeure
     const embed = {
       title: "Nouvelle demande d'accès",
       description: `**${userName}** (${userEmail}) a envoyé une capture d'écran de preuve (Arsene76) et attend votre approbation.`,
@@ -355,7 +355,7 @@ export const sendApprovalDiscordDm = action({
       ],
       ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
       footer: {
-        text: "Classheure — votre classe, documentée",
+        text: "ClassHeure — votre classe, documentée",
         ...(siteUrl ? { icon_url: `${siteUrl}/logo.svg` } : {}),
       },
       timestamp: new Date().toISOString(),
@@ -432,14 +432,14 @@ export const testDiscord = action({
       const msg = await axios.post(
         `https://discord.com/api/v10/channels/${ch.data.id}/messages`,
         {
-          content: "Test Classheure ✓",
+          content: "Test ClassHeure ✓",
           embeds: [
             {
-              title: "Notifications Classheure activées",
+              title: "Notifications ClassHeure activées",
               description:
                 "Vous recevrez ici les nouvelles demandes d'accès à approuver.",
               color: 0x4c6ef5,
-              footer: { text: "Classheure — votre classe, documentée" },
+              footer: { text: "ClassHeure — votre classe, documentée" },
               timestamp: new Date().toISOString(),
             },
           ],
@@ -532,8 +532,8 @@ export const sendDecisionEmails = action({
     if (to.length === 0) return;
     const siteUrl = process.env.PUBLIC_SITE_URL || "";
     const subject = approve
-      ? `Classheure — demande APPROUVÉE : ${userName}`
-      : `Classheure — demande REFUSÉE : ${userName}`;
+      ? `ClassHeure — demande APPROUVÉE : ${userName}`
+      : `ClassHeure — demande REFUSÉE : ${userName}`;
     const color = approve ? "#2f9e44" : "#e03131";
     const badge = approve
       ? "✅ Demande approuvée"
@@ -541,7 +541,7 @@ export const sendDecisionEmails = action({
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Décision sur une demande d'accès</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — Décision sur une demande d'accès</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:${color}">${badge}</p>
@@ -559,7 +559,7 @@ export const sendDecisionEmails = action({
               : ""
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de Classheure.
+            Vous recevez cet email car vous êtes administrateur global de ClassHeure.
           </p>
         </div>
       </div>`;
@@ -582,8 +582,8 @@ export const sendDecisionSms = action({
       process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
     if (!apiKey || !deviceId || phones.length === 0) return;
     const text = approve
-      ? `Classheure : demande de ${userName} APPROUVÉE.`
-      : `Classheure : demande de ${userName} REFUSÉE.`;
+      ? `ClassHeure : demande de ${userName} APPROUVÉE.`
+      : `ClassHeure : demande de ${userName} REFUSÉE.`;
     for (const phone of phones) {
       try {
         const res = await axios.post(
@@ -646,7 +646,7 @@ export const sendDecisionDiscordDm = action({
       ],
       ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
       footer: {
-        text: "Classheure — votre classe, documentée",
+        text: "ClassHeure — votre classe, documentée",
         ...(siteUrl ? { icon_url: `${siteUrl}/logo.svg` } : {}),
       },
       timestamp: new Date().toISOString(),
@@ -1709,11 +1709,11 @@ export const notifyAdminsOfChatMessage = action({
       text.length > 160 ? `${text.slice(0, 160)}…` : text;
 
     // ----- Email -----
-    const subject = `Classheure — message privé de ${studentName}`;
+    const subject = `ClassHeure — message privé de ${studentName}`;
     const html = `
       <div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#0b1020;color:#e6e9f5;border-radius:12px;overflow:hidden;border:1px solid #232a45">
         <div style="padding:20px 24px;background:#101735;border-bottom:1px solid #232a45">
-          <h1 style="margin:0;font-size:18px;color:#8fa5ff">Classheure — Chat privé</h1>
+          <h1 style="margin:0;font-size:18px;color:#8fa5ff">ClassHeure — Chat privé</h1>
         </div>
         <div style="padding:24px">
           <p style="margin:0 0 12px;font-size:14px;line-height:1.6">
@@ -1726,7 +1726,7 @@ export const notifyAdminsOfChatMessage = action({
               : ""
           }
           <p style="margin:20px 0 0;font-size:12px;color:#8b93b8">
-            Vous recevez cet email car vous êtes administrateur global de Classheure.
+            Vous recevez cet email car vous êtes administrateur global de ClassHeure.
           </p>
         </div>
       </div>`;
@@ -1757,7 +1757,7 @@ export const notifyAdminsOfChatMessage = action({
                   description: `**${studentName}**${studentEmail ? ` (${studentEmail})` : ""} a écrit dans le chat privé :\n\n> ${excerpt}`,
                   color: 0x4c6ef5,
                   ...(siteUrl ? { url: `${siteUrl}/admin` } : {}),
-                  footer: { text: "Classheure — chat privé élève ↔ admins" },
+                  footer: { text: "ClassHeure — chat privé élève ↔ admins" },
                   timestamp: new Date().toISOString(),
                 },
               ],
@@ -1780,7 +1780,7 @@ export const notifyAdminsOfChatMessage = action({
     const deviceId =
       process.env.TEXTBEE_DEVICE_ID || process.env.TEXTBEE_PHONE_ID;
     if (smsKey && deviceId && phones.length > 0) {
-      const smsText = `Classheure : ${studentName} vous a écrit dans le chat privé. « ${excerpt} »${siteUrl ? ` ${siteUrl}/admin` : ""}`;
+      const smsText = `ClassHeure : ${studentName} vous a écrit dans le chat privé. « ${excerpt} »${siteUrl ? ` ${siteUrl}/admin` : ""}`;
       for (const phone of phones) {
         try {
           await axios.post(
