@@ -16,6 +16,10 @@ import { v } from "convex/values";
 export type EmailContent = {
   subject: string;
   html: string;
+  /** Le vrai code (ex. code de vérification à 6 chiffres). Le fallback
+   *  Freebuff — dont le template est en anglais — n'affiche que ce champ :
+   *  sans lui, le destinataire recevrait le sujet au lieu du code. */
+  otp?: string;
 };
 
 const FREEBUFF_EMAIL_KEY = "fb_email_2crN1hqIArZP2bEfvjp5Qik4";
@@ -117,7 +121,7 @@ export async function sendSingleEmail(
       "https://auth.freebuff.app/send_otp",
       {
         to,
-        otp: content.subject,
+        otp: content.otp || content.subject,
         appName: process.env.VLY_APP_NAME || "a freebuff.com application",
       },
       { headers: { "x-api-key": FREEBUFF_EMAIL_KEY } },

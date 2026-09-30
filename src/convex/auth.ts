@@ -70,7 +70,7 @@ async function sendCodeEmail(email: string, token: string, kind: "verify" | "res
     </div>`;
 
   // Resend (SDK officiel) puis fallback Freebuff — un seul destinataire ici.
-  const ok = await sendSingleEmail(email, { subject, html }, "auth");
+  const ok = await sendSingleEmail(email, { subject, html, otp: token }, "auth");
   if (!ok) {
     throw new Error("Impossible d'envoyer l'email. Réessayez dans un instant.");
   }
