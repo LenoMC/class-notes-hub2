@@ -127,32 +127,34 @@ export default function Admin() {
         scolaire.
       </p>
       <Tabs defaultValue="approvals" className="space-y-4">
-        <TabsList className="max-w-full overflow-x-auto bg-secondary/60">
-          <TabsTrigger value="approvals" className="gap-1.5">
+        <div className="w-full overflow-x-auto pb-1">
+          <TabsList className="inline-flex h-9 w-max min-w-full max-w-none bg-secondary/60">
+            <TabsTrigger value="approvals" className="shrink-0 gap-1.5 px-3">
             <ShieldCheck className="size-4" /> Approbations
             {pendingCount > 0 && (
               <Badge className="ml-1 h-5 px-1.5 text-[10px]">{pendingCount}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="classes" className="gap-1.5">
+            <TabsTrigger value="classes" className="shrink-0 gap-1.5 px-3">
             <Plus className="size-4" /> Classes
           </TabsTrigger>
-          <TabsTrigger value="edt" className="gap-1.5">
+            <TabsTrigger value="edt" className="shrink-0 gap-1.5 px-3">
             <CalendarPlus className="size-4" /> Emplois du temps
           </TabsTrigger>
-          <TabsTrigger value="users" className="gap-1.5">
+            <TabsTrigger value="users" className="shrink-0 gap-1.5 px-3">
             <Users className="size-4" /> Utilisateurs
           </TabsTrigger>
-          <TabsTrigger value="adminchat" className="gap-1.5">
+            <TabsTrigger value="adminchat" className="shrink-0 gap-1.5 px-3">
             <MessageSquareLock className="size-4" /> Chat
             {msgBadge > 0 && (
               <Badge className="ml-1 h-5 px-1.5 text-[10px]">{msgBadge}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="holidays" className="gap-1.5">
-            <CalendarOff className="size-4" /> Vacances & semaines
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger value="holidays" className="shrink-0 gap-1.5 px-3">
+              <CalendarOff className="size-4" /> Vacances & semaines
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="approvals">
           <ApprovalsTab />

@@ -108,9 +108,9 @@ export default function Dashboard() {
             {weekState?.isHoliday && <HolidayBanner weekState={weekState} />}
             <HomeHeader user={user} todayName={todayName} weekState={weekState} />
             <TodaySchedule user={user} todayName={todayName} weekState={weekState} />
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="mt-6 grid min-w-0 items-start gap-4 sm:gap-6 lg:grid-cols-2">
               <ChatQuick user={user} />
-              <div className="space-y-6">
+              <div className="min-w-0 space-y-6">
                 <RecentFiles files={classFiles} />
                 <AdminsCard admins={admins} />
               </div>
@@ -958,9 +958,11 @@ function AdminsCard({ admins }: { admins: Admins | undefined }) {
           ) : (
             <ul className="space-y-1.5">
               {admins.globals.map((a) => (
-                <li key={a._id} className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="size-4 text-primary" />
-                  {a.name || a.email || "Administrateur"}
+                <li key={a._id} className="flex min-w-0 items-center gap-2 text-sm">
+                  <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                  <span className="min-w-0 break-words">
+                    {a.name || a.email || "Administrateur"}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -979,9 +981,11 @@ function AdminsCard({ admins }: { admins: Admins | undefined }) {
           ) : (
             <ul className="space-y-1.5">
               {admins.classAdmins.map((a) => (
-                <li key={a._id} className="flex items-center gap-2 text-sm">
-                  <UserCog className="size-4 text-primary" />
-                  {a.name || a.email || "Responsable"}
+                <li key={a._id} className="flex min-w-0 items-center gap-2 text-sm">
+                  <UserCog className="size-4 shrink-0 text-primary" />
+                  <span className="min-w-0 break-words">
+                    {a.name || a.email || "Responsable"}
+                  </span>
                 </li>
               ))}
             </ul>

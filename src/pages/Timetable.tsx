@@ -201,8 +201,7 @@ function yForMinute(min: number): number | null {
     const pause = PAUSES.find((pa) => pa.after === p.id);
     const next = PERIODS[i + 1];
     if (pause && next && min < toMin(next.start)) {
-      const gapTop = ROW_TOPS[i] + ROW_H + ROW_GAP;
-      const pauseTop = gapTop + ROW_GAP;
+      const pauseTop = ROW_TOPS[i] + ROW_H + ROW_GAP;
       const frac = (min - eMin) / (toMin(next.start) - eMin);
       return pauseTop + frac * pause.h;
     }
@@ -694,7 +693,7 @@ function TimetableGrid({
                       style={{
                         top,
                         height: pause.h,
-                        left: `calc(${AXIS_W}px + 8px)`,
+                        left: AXIS_W,
                         right: 0,
                       }}
                     >
