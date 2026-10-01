@@ -248,6 +248,13 @@ export const verifyEmailDeliverable = action({
           if (status) {
             return { ok: false, reason: "inexistante" as const };
           }
+          // Reponse 200 sans statut = erreur applicative (cle invalide,
+          // credits epuises...). On la journalise pour diagnostic rapide.
+          const zbError = (res.data as { error?: string })?.error;
+          console.warn(
+            "[auth] ZeroBounce indisponible :",
+            zbError || JSON.stringify(res.data),
+          );
         } else {
           console.warn("[auth] ZeroBounce HTTP", res.status);
         }
