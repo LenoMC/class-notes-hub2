@@ -205,6 +205,15 @@ const WELL_KNOWN_EMAIL_DOMAINS = [
   "education.fr", "monlycee.net", "edu.gov.fr",
 ];
 
+// Fournisseurs grand public dont les serveurs repondent aux sondages SMTP :
+// pour ces domaines, « mailbox_exists = false » renvoye par Mailgun est fiable.
+const CONSUMER_MAIL_DOMAINS = [
+  "gmail.com", "googlemail.com", "outlook.com", "outlook.fr", "hotmail.com",
+  "hotmail.fr", "live.com", "live.fr", "yahoo.com", "yahoo.fr", "icloud.com",
+  "orange.fr", "free.fr", "sfr.fr", "laposte.net", "aol.com", "gmx.com",
+  "gmx.fr", "mail.com",
+];
+
 async function dnsQuery(name: string, type: "MX" | "A") {
   const res = await fetch(
     `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`,
@@ -217,9 +226,10 @@ async function dnsQuery(name: string, type: "MX" | "A") {
 
 /** Vérification complète d'une adresse email avant d'envoyer un code :
  *  1. syntaxe + domaine (MX/A via DNS, gratuit) — rejette les fautes de frappe ;
- *  2. existence RÉELLE de la boîte via ZeroBounce (SMTP) si ZEROBOUNCE_API_KEY
- *     est configurée — évite de gaspiller un envoi Brevo sur une adresse
- *     invalide. Sans clé, on se contente du contrôle domaine. */
+ *  2. existence RÉELLE de la boîte : ZeroBounce (SMTP), puis Mailgun en
+ *     secours si ZEROBOUNCE_API_KEY manque ou est à court de credit — evite
+ *     de gaspiller un envoi Brevo sur une adresse inexistante ;
+ *  3. sans aucune clé, on se contente du contrôle domaine. */
 export const verifyEmailDeliverable = action({
   args: { email: v.string() },
   handler: async (_ctx, { email }) => {
@@ -260,6 +270,46 @@ export const verifyEmailDeliverable = action({
         }
       } catch (err) {
         console.warn("[auth] ZeroBounce a échoué :", err);
+      }
+    }
+
+    // ----- 1b) Secours Mailgun : la boîte existe-t-elle ? (MAILGUN_API_KEY) --
+    const mailgunKey = process.env.MAILGUN_API_KEY;
+    if (mailgunKey) {
+      try {
+        const res = await axios.get(
+          "https://api.mailgun.net/v4/address/validate",
+          {
+            params: { address: normalized },
+            auth: { username: "api", password: mailgunKey },
+            validateStatus: () => true,
+          },
+        );
+        if (res.status < 400) {
+          const data = res.data as {
+            is_valid?: boolean;
+            mailbox_exists?: boolean;
+          };
+          if (data.is_valid === false) {
+            return { ok: false, reason: "inexistante" as const };
+          }
+          if (data.mailbox_exists === true) {
+            return { ok: true, reason: "smtp" as const };
+          }
+          // mailbox_exists = false : fiable uniquement sur les grands
+          // fournisseurs grand public (certains serveurs scolaires ferment
+          // la porte aux sondages SMTP et repondraient "inexistant" a tort).
+          if (
+            data.mailbox_exists === false &&
+            CONSUMER_MAIL_DOMAINS.includes(domain)
+          ) {
+            return { ok: false, reason: "inexistante" as const };
+          }
+        } else {
+          console.warn("[auth] Mailgun HTTP", res.status);
+        }
+      } catch (err) {
+        console.warn("[auth] Mailgun a échoué :", err);
       }
     }
 
