@@ -329,6 +329,11 @@ export const listPolls = query({
       .withIndex("by_class", (q) => q.eq("classId", classId))
       .order("desc")
       .collect();
+    // Les sondages prives n'existent pas pour les non-responsables.
+    const moderator = canModerateForum(user);
+    const visible = rows.filter(
+      (p) => moderator || p.visibility !== "admins",
+    );
     const result: Array<{
       _id: Id<"polls">;
       question: string;
@@ -342,8 +347,9 @@ export const listPolls = query({
       createdAt: number;
       canClose: boolean;
       canDelete: boolean;
+      visibility: "class" | "admins";
     }> = [];
-    for (const p of rows) {
+    for (const p of visible) {
       const votes = await ctx.db
         .query("pollVotes")
         .withIndex("by_poll", (q) => q.eq("pollId", p._id))
@@ -366,6 +372,7 @@ export const listPolls = query({
         createdAt: p.createdAt,
         canClose: p.authorId === user._id || canModerateForum(user),
         canDelete: p.authorId === user._id || !!user.isAdmin,
+        visibility: p.visibility === "admins" ? "admins" : "class",
       });
     }
     return result;
@@ -377,8 +384,11 @@ export const createPoll = mutation({
   args: {
     question: v.string(),
     options: v.array(v.string()),
+    visibility: v.optional(
+      v.union(v.literal("class"), v.literal("admins")),
+    ),
   },
-  handler: async (ctx, { question, options }) => {
+  handler: async (ctx, { question, options, visibility: visibilityArg }) => {
     const user = await requireUser(ctx);
     if (!canModerateForum(user)) {
       throw new Error(
@@ -399,27 +409,33 @@ export const createPoll = mutation({
     for (const o of opts) {
       if (o.length > 80) throw new Error("Un choix est trop long (80 caractères maximum).");
     }
+    // "admins" = sondage prive : visible uniquement par les responsables.
+    const visibility = visibilityArg === "admins" ? "admins" : "class";
     await ctx.db.insert("polls", {
       classId,
       authorId: user._id,
       question: q,
       options: opts,
+      visibility,
       createdAt: Date.now(),
     });
 
     // Email à tous les membres de la classe (hors créateur)
-    const members = (
-      await ctx.db
-        .query("users")
-        .withIndex("by_class", (q) => q.eq("classId", classId))
-        .collect()
-    ).filter((m) => m._id !== user._id && m.email && m.email.includes("@"));
-    if (members.length > 0) {
-      await ctx.scheduler.runAfter(0, api.forum.sendPollEmails, {
-        to: members.map((m) => m.email!),
-        question: q,
-        authorName: user.name ?? "Votre encadrant",
-      });
+    // Sondage prive : aucun email aux membres de la classe.
+    if (visibility !== "admins") {
+      const members = (
+        await ctx.db
+          .query("users")
+          .withIndex("by_class", (q) => q.eq("classId", classId))
+          .collect()
+      ).filter((m) => m._id !== user._id && m.email && m.email.includes("@"));
+      if (members.length > 0) {
+        await ctx.scheduler.runAfter(0, api.forum.sendPollEmails, {
+          to: members.map((m) => m.email!),
+          question: q,
+          authorName: user.name ?? "Votre encadrant",
+        });
+      }
     }
     return true;
   },
@@ -630,14 +646,48 @@ export const getLatestPoll = query({
       .query("polls")
       .withIndex("by_class", (q) => q.eq("classId", classId))
       .order("desc")
-      .take(1);
-    const p = rows[0];
-    if (!p || p.authorId === user._id) return null;
+      .take(20);
+    const moderator = canModerateForum(user);
+    const p = rows.find(
+      (row) =>
+        row.authorId !== user._id &&
+        (moderator || row.visibility !== "admins"),
+    );
+    if (!p) return null;
     return {
       _id: p._id as string,
       question: p.question,
       authorName: (await ctx.db.get(p.authorId))?.name ?? "Un encadrant",
       createdAt: p.createdAt,
     };
+  },
+});
+
+/** Qui a voté quoi : noms par choix. Reserve aux admins et au createur
+ *  du sondage. */
+export const getPollVoters = query({
+  args: { pollId: v.id("polls") },
+  handler: async (ctx, { pollId }) => {
+    const user = await requireUser(ctx);
+    const p = await ctx.db.get(pollId);
+    if (!p) throw new Error("Sondage introuvable.");
+    if (p.authorId !== user._id && !canModerateForum(user)) {
+      throw new Error(
+        "Seuls les responsables et l'auteur du sondage peuvent voir les votants.",
+      );
+    }
+    const votes = await ctx.db
+      .query("pollVotes")
+      .withIndex("by_poll", (q) => q.eq("pollId", pollId))
+      .collect();
+    const byChoice: string[][] = p.options.map(() => []);
+    for (const vote of votes) {
+      if (vote.choice < 0 || vote.choice >= byChoice.length) continue;
+      const voter = await ctx.db.get(vote.userId);
+      byChoice[vote.choice].push(voter?.name ?? "Membre de la classe");
+    }
+    return byChoice.map((names) =>
+      names.sort((a, b) => a.localeCompare(b, "fr")),
+    );
   },
 });

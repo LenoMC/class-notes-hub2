@@ -122,6 +122,10 @@ const schema = defineSchema(
       closed: v.optional(v.boolean()),
       closedAt: v.optional(v.number()),
       createdAt: v.number(),
+      // "class" = toute la classe (defaut) ; "admins" = reserve aux admins
+      visibility: v.optional(
+        v.union(v.literal("class"), v.literal("admins")),
+      ),
     }).index("by_class", ["classId"]),
 
     // Un vote par utilisateur et par sondage

@@ -1449,12 +1449,18 @@ export const getUnreadCounts = query({
 
     // Sondages : sondages créés par les autres depuis la dernière visite
     const pollsLast = await lastReadFor(ctx, user._id, "sondages");
+    const pollsModerator = !!user.isAdmin || !!user.isClassAdmin;
     counts.sondages = (
       await ctx.db
         .query("polls")
         .withIndex("by_class", (q) => q.eq("classId", classId))
         .collect()
-    ).filter((p) => p.authorId !== user._id && p.createdAt > pollsLast).length;
+    ).filter(
+      (p) =>
+        p.authorId !== user._id &&
+        p.createdAt > pollsLast &&
+        (pollsModerator || p.visibility !== "admins"),
+    ).length;
 
     return counts;
   },
