@@ -42,6 +42,7 @@ import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { ArrowDown } from "lucide-react";
 import {
   ArrowLeft,
+  BarChart3,
   CalendarOff,
   CalendarPlus,
   Check,
@@ -159,6 +160,9 @@ export default function Admin() {
                 <Badge className="ml-1 h-5 px-1.5 text-[10px]">{msgBadge}</Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="polls" className="shrink-0 gap-1.5 px-3">
+              <BarChart3 className="size-4" /> Sondages
+            </TabsTrigger>
             <TabsTrigger value="holidays" className="shrink-0 gap-1.5 px-3">
               <CalendarOff className="size-4" /> Vacances & semaines
             </TabsTrigger>
@@ -179,6 +183,9 @@ export default function Admin() {
         </TabsContent>
         <TabsContent value="adminchat">
           <AdminChatTab />
+        </TabsContent>
+        <TabsContent value="polls">
+          <AdminPollsTab />
         </TabsContent>
         <TabsContent value="holidays">
           <HolidaysTab />
@@ -2020,6 +2027,225 @@ function AdminChatThread({
           )}
         </Button>
       </form>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Onglet Sondages : liste des sondages + qui a voté quoi
+// ----------------------------------------------------------------------------
+
+type AdminPoll = {
+  _id: string;
+  question: string;
+  options: string[];
+  closed: boolean;
+  myChoice: number | null;
+  counts: number[];
+  total: number;
+  authorName: string;
+  createdAt: number;
+  visibility: "class" | "admins";
+};
+
+function pollDate(ts: number) {
+  return new Date(ts).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function pollInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const second = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : "";
+  return (first + second).toUpperCase();
+}
+
+function AdminPollsTab() {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const polls = useQuery(api.forum.listPolls) as AdminPoll[] | undefined;
+  const selected = selectedId
+    ? ((polls ?? []).find((p) => p._id === selectedId) ?? null)
+    : null;
+
+  if (selected) {
+    return (
+      <AdminPollDetail poll={selected} onBack={() => setSelectedId(null)} />
+    );
+  }
+  return (
+    <AdminPollsList
+      polls={polls}
+      loading={polls === undefined}
+      onOpen={setSelectedId}
+    />
+  );
+}
+
+function AdminPollsList({
+  polls,
+  loading,
+  onOpen,
+}: {
+  polls: AdminPoll[] | undefined;
+  loading: boolean;
+  onOpen: (id: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  }
+  if (!polls || polls.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        Aucun sondage pour le moment. Créez-en un depuis la page Sondages.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <p className="pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Sondages de la classe
+      </p>
+      {polls.map((p) => (
+        <button
+          key={p._id}
+          type="button"
+          onClick={() => onOpen(p._id)}
+          className="w-full flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left transition-colors hover:border-primary/50 cursor-pointer"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <BarChart3 className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm font-medium">{p.question}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {pollDate(p.createdAt)}
+              </span>
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {p.authorName} · {p.total} vote{p.total > 1 ? "s" : ""} ·{" "}
+              {p.closed ? "Clôturé" : "En cours"}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdminPollDetail({
+  poll,
+  onBack,
+}: {
+  poll: AdminPoll;
+  onBack: () => void;
+}) {
+  const voters = useQuery(api.forum.getPollVoters, {
+    pollId: poll._id as Id<"polls">,
+  });
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+      >
+        <ArrowLeft className="size-4" /> Retour à la liste
+      </button>
+
+      <Card className="panel border-border/70">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">{poll.question}</CardTitle>
+          <CardDescription className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span>{poll.authorName}</span>
+            <span>·</span>
+            <span>{pollDate(poll.createdAt)}</span>
+            {poll.closed ? (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Clôturé
+              </Badge>
+            ) : (
+              <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/40 text-[10px]">
+                En cours
+              </Badge>
+            )}
+            <Badge variant="outline" className="gap-1 text-[10px]">
+              <Users className="size-3" /> {poll.total} vote
+              {poll.total > 1 ? "s" : ""}
+            </Badge>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {poll.options.map((opt, i) => {
+            const count = poll.counts[i] ?? 0;
+            const pct =
+              poll.total > 0 ? Math.round((count / poll.total) * 100) : 0;
+            const names = voters?.[i];
+            return (
+              <div
+                key={i}
+                className="rounded-xl border border-border/60 bg-secondary/20 p-3.5"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm font-semibold">
+                    {opt}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {count} vote{count > 1 ? "s" : ""} · {pct}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary/70">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Ont voté ce choix
+                </p>
+                {!names ? (
+                  <Skeleton className="mt-1.5 h-5 w-32" />
+                ) : names.length === 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Aucun vote pour ce choix.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {names.map((n, k) => (
+                      <span
+                        key={k}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/70 py-0.5 pl-0.5 pr-2.5 text-xs"
+                      >
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-[9px] font-bold text-primary">
+                          {pollInitials(n)}
+                        </span>
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Vue réservée aux administrateurs : chaque nom correspond à la réponse
+        choisie par la personne.
+      </p>
     </div>
   );
 }

@@ -25,7 +25,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -117,21 +116,16 @@ export default function Sondages() {
     );
   }
 
-  // Un non-admin ne peut jamais se retrouver sur l'onglet Privé
-  const activeTab = !canCreate && tab === "prive" ? "encours" : tab;
+  const activeTab = tab;
 
-  const isPrivate = (p: Poll) => p.visibility === "admins";
   const counts = {
-    encours: (polls ?? []).filter((p) => !isPrivate(p) && !p.closed).length,
-    archives: (polls ?? []).filter((p) => !isPrivate(p) && p.closed).length,
-    prive: (polls ?? []).filter(isPrivate).length,
+    encours: (polls ?? []).filter((p) => !p.closed).length,
+    archives: (polls ?? []).filter((p) => p.closed).length,
   };
 
-  const list = (polls ?? []).filter((p) => {
-    if (activeTab === "prive") return isPrivate(p);
-    if (isPrivate(p)) return false;
-    return activeTab === "archives" ? p.closed : !p.closed;
-  });
+  const list = (polls ?? []).filter((p) =>
+    activeTab === "archives" ? p.closed : !p.closed,
+  );
 
   const openPoll = openId
     ? ((polls ?? []).find((p) => p._id === openId) ?? null)
@@ -158,12 +152,7 @@ export default function Sondages() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setTab}>
-          <TabsList
-            className={cn(
-              "w-full bg-secondary/60",
-              canCreate ? "grid grid-cols-3" : "grid grid-cols-2",
-            )}
-          >
+          <TabsList className="w-full grid grid-cols-2 bg-secondary/60">
             <TabsTrigger value="encours" className="gap-1.5 px-2 sm:px-3">
               <BarChart3 className="size-3.5 shrink-0" />
               <span className="truncate">En cours</span>
@@ -182,17 +171,6 @@ export default function Sondages() {
                 </span>
               )}
             </TabsTrigger>
-            {canCreate && (
-              <TabsTrigger value="prive" className="gap-1.5 px-2 sm:px-3">
-                <Lock className="size-3.5 shrink-0" />
-                <span className="truncate">Privé</span>
-                {counts.prive > 0 && (
-                  <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
-                    {counts.prive}
-                  </span>
-                )}
-              </TabsTrigger>
-            )}
           </TabsList>
         </Tabs>
 
@@ -207,20 +185,16 @@ export default function Sondages() {
               <CardContent className="py-12 text-center">
                 <BarChart3 className="mx-auto size-10 text-muted-foreground" />
                 <p className="mt-3 font-medium">
-                  {activeTab === "prive"
-                    ? "Aucun sondage privé"
-                    : activeTab === "archives"
-                      ? "Aucun sondage clôturé"
-                      : "Aucun sondage pour l'instant"}
+                  {activeTab === "archives"
+                    ? "Aucun sondage clôturé"
+                    : "Aucun sondage pour l'instant"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {activeTab === "prive"
-                    ? "Créez un sondage réservé aux admins : aucun email n'est envoyé."
-                    : activeTab === "archives"
-                      ? "Les sondages terminés apparaîtront ici."
-                      : canCreate
-                        ? "Créez un premier sondage pour consulter la classe."
-                        : "Les responsables de classe et administrateurs publieront des sondages ici."}
+                  {activeTab === "archives"
+                    ? "Les sondages terminés apparaîtront ici."
+                    : canCreate
+                      ? "Créez un premier sondage pour consulter la classe."
+                      : "Les responsables de classe et administrateurs publieront des sondages ici."}
                 </p>
               </CardContent>
             </Card>
@@ -238,14 +212,6 @@ export default function Sondages() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate font-medium">{poll.question}</span>
-                    {isPrivate(poll) && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 shrink-0 text-[10px] text-amber-300 border-amber-500/40"
-                      >
-                        <Lock className="size-3" /> Privé
-                      </Badge>
-                    )}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                     {poll.authorName} · {dateShort(poll.createdAt)} · {poll.total}{" "}
@@ -290,12 +256,7 @@ export default function Sondages() {
         </DialogContent>
       </Dialog>
 
-      <NewPollDialog
-        open={creating}
-        onOpenChange={setCreating}
-        defaultPrivate={activeTab === "prive"}
-        onCreated={(priv) => setTab(priv ? "prive" : "encours")}
-      />
+      <NewPollDialog open={creating} onOpenChange={setCreating} />
     </AppShell>
   );
 }
@@ -369,14 +330,6 @@ function PollCard({
               <span>{poll.authorName}</span>
               <span>·</span>
               <span>{dateShort(poll.createdAt)}</span>
-              {poll.visibility === "admins" && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 text-[10px] text-amber-300 border-amber-500/40"
-                >
-                  <Lock className="size-3" /> Privé — admins
-                </Badge>
-              )}
               {poll.closed ? (
                 <Badge variant="secondary" className="gap-1 text-[10px]">
                   <Lock className="size-3" /> Clôturé
@@ -591,24 +544,14 @@ function VotersDialog({
 function NewPollDialog({
   open,
   onOpenChange,
-  defaultPrivate,
-  onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  defaultPrivate: boolean;
-  onCreated?: (isPrivate: boolean) => void;
 }) {
   const create = useMutation(api.forum.createPoll);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
-  const [isPrivate, setIsPrivate] = useState(false);
   const [sending, setSending] = useState(false);
-
-  // À l'ouverture : précoché quand on vient de l'onglet Privé
-  useEffect(() => {
-    if (open) setIsPrivate(defaultPrivate);
-  }, [open, defaultPrivate]);
 
   const setOption = (i: number, value: string) => {
     setOptions((prev) => prev.map((o, j) => (j === i ? value : o)));
@@ -620,21 +563,13 @@ function NewPollDialog({
     if (sending) return;
     setSending(true);
     try {
-      await create({
-        question,
-        options: filled,
-        visibility: isPrivate ? "admins" : "class",
-      });
+      await create({ question, options: filled });
       toast.success(
-        isPrivate
-          ? "Sondage privé publié — visible uniquement par les admins (aucun email envoyé)."
-          : "Sondage publié ! Un email a été envoyé aux membres de la classe.",
+        "Sondage publié ! Un email a été envoyé aux membres de la classe.",
       );
       setQuestion("");
       setOptions(["", ""]);
-      setIsPrivate(false);
       onOpenChange(false);
-      onCreated?.(isPrivate);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Création impossible");
     } finally {
@@ -655,9 +590,7 @@ function NewPollDialog({
             <Mail className="size-4 text-primary" /> Nouveau sondage
           </DialogTitle>
           <DialogDescription>
-            {isPrivate
-              ? "Sondage réservé aux admins : aucun email ne sera envoyé."
-              : "Les membres de la classe recevront un email avec votre question."}
+            Les membres de la classe recevront un email avec votre question.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -709,26 +642,6 @@ function NewPollDialog({
               </Button>
             )}
           </div>
-          <div className="space-y-2 rounded-lg border border-border/60 bg-secondary/30 p-3">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="np-private"
-                checked={isPrivate}
-                onCheckedChange={(v) => setIsPrivate(v === true)}
-              />
-              <Label
-                htmlFor="np-private"
-                className="flex cursor-pointer items-center gap-1.5 text-sm"
-              >
-                <Lock className="size-3.5 text-amber-300" /> Réservé aux admins
-                (privé)
-              </Label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Visible uniquement dans l'onglet Privé, aucun email envoyé aux
-              élèves.
-            </p>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -736,7 +649,7 @@ function NewPollDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={!valid || sending}>
             {sending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {isPrivate ? "Publier (privé)" : "Publier et notifier"}
+            Publier et notifier
           </Button>
         </DialogFooter>
       </DialogContent>
