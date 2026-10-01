@@ -137,6 +137,15 @@ const schema = defineSchema(
       .index("by_poll", ["pollId"])
       .index("by_poll_user", ["pollId", "userId"]),
 
+    // Derniers controles payants d'email (cache : 1 verification = 1 credit
+    // ZeroBounce/Mailgun, donc on ne re-verifie pas la meme adresse)
+    emailChecks: defineTable({
+      email: v.string(),
+      ok: v.boolean(),
+      reason: v.string(),
+      checkedAt: v.number(),
+    }).index("by_email", ["email"]),
+
     // Codes de réinitialisation de mot de passe envoyés par SMS (comptes téléphone)
     phoneResetCodes: defineTable({
       phone: v.string(), // numéro E.164 du compte concerné (+33...)

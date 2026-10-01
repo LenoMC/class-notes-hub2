@@ -224,19 +224,94 @@ async function dnsQuery(name: string, type: "MX" | "A") {
   return data.Answer && data.Answer.length > 0;
 }
 
+type EmailCheckReason =
+  | "syntaxe"
+  | "inexistante"
+  | "compte"
+  | "smtp"
+  | "domaine-connu"
+  | "domaine"
+  | "domaine-seulement";
+
+/** [INTERNE] Un compte existe-t-il deja avec cette adresse ? (0 credit) */
+export const emailAccountExists = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", email))
+      .first();
+    return !!user;
+  },
+});
+
+/** [INTERNE] Dernier controle payant enregistre pour cette adresse. */
+export const getCachedEmailCheck = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    return await ctx.db
+      .query("emailChecks")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+  },
+});
+
+/** [INTERNE] Memorise un resultat payant (economise les credits). */
+export const saveEmailCheck = internalMutation({
+  args: { email: v.string(), ok: v.boolean(), reason: v.string() },
+  handler: async (ctx, { email, ok, reason }) => {
+    const existing = await ctx.db
+      .query("emailChecks")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { ok, reason, checkedAt: Date.now() });
+    } else {
+      await ctx.db.insert("emailChecks", {
+        email,
+        ok,
+        reason,
+        checkedAt: Date.now(),
+      });
+    }
+  },
+});
+
 /** Vérification complète d'une adresse email avant d'envoyer un code :
  *  1. syntaxe + domaine (MX/A via DNS, gratuit) — rejette les fautes de frappe ;
- *  2. existence RÉELLE de la boîte : ZeroBounce (SMTP), puis Mailgun en
- *     secours si ZEROBOUNCE_API_KEY manque ou est à court de credit — evite
- *     de gaspiller un envoi Brevo sur une adresse inexistante ;
- *  3. sans aucune clé, on se contente du contrôle domaine. */
+ *  2. compte deja existant : aucun credit depense ;
+ *  3. resultat deja connu en cache : aucun credit depense (7 j si acceptee,
+ *     24 h si refusee) ;
+ *  4. existence RÉELLE de la boîte : ZeroBounce (SMTP), puis Mailgun en
+ *     secours — evite de gaspiller un envoi Brevo sur une adresse inexistante ;
+ *  5. sans aucune clé, on se contente du contrôle domaine. */
 export const verifyEmailDeliverable = action({
   args: { email: v.string() },
-  handler: async (_ctx, { email }) => {
+  handler: async (
+    ctx,
+    { email },
+  ): Promise<{ ok: boolean; reason: EmailCheckReason }> => {
     const normalized = normalizeEmail(email);
     const domain = normalized.split("@")[1];
     if (!normalized.includes("@") || !domain || !domain.includes(".")) {
       return { ok: false, reason: "syntaxe" as const };
+    }
+
+    // 0) Compte deja cree avec cette adresse : aucun credit a depenser.
+    const exists = await ctx.runQuery(internal.auth.emailAccountExists, {
+      email: normalized,
+    });
+    if (exists) return { ok: true, reason: "compte" as const };
+
+    // 0b) Deja verifie recemment : 7 jours si acceptee, 24 h si refusee.
+    const cached = await ctx.runQuery(internal.auth.getCachedEmailCheck, {
+      email: normalized,
+    });
+    if (cached) {
+      const ttl = cached.ok ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      if (Date.now() - cached.checkedAt < ttl) {
+        return { ok: cached.ok, reason: cached.reason as EmailCheckReason };
+      }
     }
 
     // ----- 1) Contrôle SMTP de la boîte (ZeroBounce) — le plus fiable. —
@@ -253,9 +328,19 @@ export const verifyEmailDeliverable = action({
           // valid → la boîte existe ; catch-all → domaine qui accepte tout
           // (on laisse passer) ; invalid / do_not_mail / spamtrap… → rejet.
           if (status === "valid" || status === "catch-all") {
+            await ctx.runMutation(internal.auth.saveEmailCheck, {
+              email: normalized,
+              ok: true,
+              reason: "smtp",
+            });
             return { ok: true, reason: "smtp" as const };
           }
           if (status) {
+            await ctx.runMutation(internal.auth.saveEmailCheck, {
+              email: normalized,
+              ok: false,
+              reason: "inexistante",
+            });
             return { ok: false, reason: "inexistante" as const };
           }
           // Reponse 200 sans statut = erreur applicative (cle invalide,
@@ -291,9 +376,19 @@ export const verifyEmailDeliverable = action({
             mailbox_exists?: boolean;
           };
           if (data.is_valid === false) {
+            await ctx.runMutation(internal.auth.saveEmailCheck, {
+              email: normalized,
+              ok: false,
+              reason: "inexistante",
+            });
             return { ok: false, reason: "inexistante" as const };
           }
           if (data.mailbox_exists === true) {
+            await ctx.runMutation(internal.auth.saveEmailCheck, {
+              email: normalized,
+              ok: true,
+              reason: "smtp",
+            });
             return { ok: true, reason: "smtp" as const };
           }
           // mailbox_exists = false : fiable uniquement sur les grands
@@ -303,6 +398,11 @@ export const verifyEmailDeliverable = action({
             data.mailbox_exists === false &&
             CONSUMER_MAIL_DOMAINS.includes(domain)
           ) {
+            await ctx.runMutation(internal.auth.saveEmailCheck, {
+              email: normalized,
+              ok: false,
+              reason: "inexistante",
+            });
             return { ok: false, reason: "inexistante" as const };
           }
         } else {
@@ -318,8 +418,9 @@ export const verifyEmailDeliverable = action({
       return { ok: true, reason: "domaine-connu" as const };
     }
     try {
-      const hasMx =
-        (await dnsQuery(domain, "MX")) || (await dnsQuery(domain, "A"));
+      // Un domaine sans MX ne recoit aucun email (fuite de parking, faute de
+      // frappe...) : le simple record A ne suffit pas.
+      const hasMx = await dnsQuery(domain, "MX");
       if (!hasMx) return { ok: false, reason: "domaine" as const };
     } catch (err) {
       console.warn("[auth] vérification DNS impossible :", err);
