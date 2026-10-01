@@ -198,7 +198,7 @@ export default function Sondages() {
                 </p>
               </CardContent>
             </Card>
-          ) : (
+          ) : activeTab === "archives" ? (
             list.map((poll) => (
               <button
                 key={poll._id}
@@ -233,6 +233,8 @@ export default function Sondages() {
                 <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             ))
+          ) : (
+            list.map((poll) => <PollCard key={poll._id} poll={poll} />)
           )}
         </div>
       </div>
@@ -419,7 +421,7 @@ function PollCard({
                       className="my-1.5 flex shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                     >
                       <Users className="size-3.5" />
-                      {count} · {pct}%
+                      {count} vote{count > 1 ? "s" : ""} · {pct}%
                     </button>
                   ) : (
                     <span className="flex shrink-0 items-center self-center text-xs text-muted-foreground">
@@ -433,7 +435,8 @@ function PollCard({
         {canSeeVoters && showResults && (
           <p className="flex items-center gap-1 pt-1 text-xs text-muted-foreground">
             <Users className="size-3" />
-            Cliquez sur « n » d'un choix pour voir qui a voté.
+            Cliquez sur le nombre de votes à droite d'un choix pour voir qui
+            a voté.
           </p>
         )}
         {!hasVoted && !poll.closed && !canSeeVoters && (
