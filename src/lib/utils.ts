@@ -7,6 +7,8 @@ export function cn(...inputs: ClassValue[]) {
 
 export type FicheKind = "cours" | "devoir" | "revision";
 
+// Libellés et couleurs des types de fiches (cours / devoir / révision).
+
 /** Libellé affiché pour un type de fiche. */
 export function kindLabel(kind: FicheKind): string {
   return kind === "revision" ? "révision" : kind;
