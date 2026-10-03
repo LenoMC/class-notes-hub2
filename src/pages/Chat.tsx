@@ -32,7 +32,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { cn } from "@/lib/utils";
+import { cn, kindLabel } from "@/lib/utils";
 import { StudentAdminChatPanel } from "@/components/StudentAdminChat";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { useMutation, useQuery } from "convex/react";
@@ -82,11 +82,10 @@ type ChatMessage = {
   text: string;
   createdAt: number;
   authorId: string;
-  mine: boolean;
-  fiche: null | {
+  mine: boolean;    fiche: null | {
     _id: string;
     title: string;
-    kind: "cours" | "devoir";
+    kind: "cours" | "devoir" | "revision";
     hasFile: boolean;
     storageId: string | null;
     externalUrl: string | null;
@@ -97,7 +96,7 @@ type ChatMessage = {
 type FicheLite = {
   _id: string;
   title: string;
-  kind: "cours" | "devoir";
+  kind: "cours" | "devoir" | "revision";
   subject: string;
   day: string;
   start: string;
@@ -427,7 +426,7 @@ export default function Chat() {
                                   {m.fiche.title}
                                 </span>
                                 <span className="block text-[10px] opacity-70 uppercase">
-                                  Fiche · {m.fiche.kind}
+                                  Fiche · {kindLabel(m.fiche.kind)}
                                 </span>
                               </span>
                               {m.fiche.hasFile ? (
@@ -704,7 +703,7 @@ export default function Chat() {
                     variant="outline"
                     className="shrink-0 text-[9px] uppercase"
                   >
-                    {f.kind}
+                    {kindLabel(f.kind)}
                   </Badge>
                 </button>
               ))

@@ -23,7 +23,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
-import { cn } from "@/lib/utils";
+import { cn, kindDotClass, kindLabel } from "@/lib/utils";
 import {
   COLOR_CHOICES,
   defaultColorFor,
@@ -61,6 +61,7 @@ import {
   MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Repeat,
   RotateCcw,
   Trash2,
@@ -121,7 +122,7 @@ type WeekState = {
 type ArchivedFile = {
   _id: Id<"courseFiles">;
   title: string;
-  kind: "cours" | "devoir";
+  kind: "cours" | "devoir" | "revision";
   fileName: string;
   fileType: string;
   bytes: number | null;
@@ -959,9 +960,7 @@ function ArchivesDialog({
                             <span
                               className={cn(
                                 "size-2 rounded-full shrink-0",
-                                f.kind === "devoir"
-                                  ? "bg-primary"
-                                  : "bg-muted-foreground/60",
+                                kindDotClass(f.kind),
                               )}
                             />
                             <div className="min-w-0 flex-1">
@@ -976,7 +975,7 @@ function ArchivesDialog({
                               variant="outline"
                               className="text-[9px] uppercase"
                             >
-                              {f.kind}
+                              {kindLabel(f.kind)}
                             </Badge>
                           </div>
                         ))
@@ -1089,7 +1088,7 @@ function CourseBox({
 type FileRow = {
   _id: Id<"courseFiles">;
   title: string;
-  kind: "cours" | "devoir";
+  kind: "cours" | "devoir" | "revision";
   description: string | null;
   fileName: string;
   fileType: string;
@@ -1251,7 +1250,11 @@ function SlotDialog({
             {canEdit && (
               <Button className="w-full" onClick={() => setShowUpload((v) => !v)}>
                 <FileUp className="size-4 mr-1.5" />
-                {showUpload ? "Fermer" : "Ajouter un fichier (cours ou devoir)"}
+                {
+                  showUpload
+                    ? "Fermer"
+                    : "Ajouter un fichier (cours, devoir ou révision)"
+                }
               </Button>
             )}
             {canEdit && showUpload && (
@@ -1326,14 +1329,14 @@ function FileCard({ file, canEdit }: { file: FileRow; canEdit: boolean }) {
         <span
           className={cn(
             "mt-1 size-2 rounded-full shrink-0",
-            file.kind === "devoir" ? "bg-primary" : "bg-muted-foreground/60",
+            kindDotClass(file.kind),
           )}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{file.title}</p>
             <Badge variant="outline" className="text-[10px] uppercase">
-              {file.kind}
+              {kindLabel(file.kind)}
             </Badge>
           </div>
           {file.description && (
@@ -1404,7 +1407,9 @@ function UploadForm({
 }) {
   const addFile = useMutation(api.app.addFileMeta);
   const generateUploadUrl = useMutation(api.app.generateUploadUrl);
-  const [kind, setKind] = useState<"cours" | "devoir">("devoir");
+  const [kind, setKind] = useState<"cours" | "devoir" | "revision">(
+    "devoir",
+  );
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -1474,22 +1479,33 @@ function UploadForm({
       onSubmit={handleSubmit}
       className="space-y-3 rounded-lg border border-border/70 bg-secondary/30 p-3"
     >
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <Button
           type="button"
+          size="sm"
           variant={kind === "devoir" ? "default" : "outline"}
           onClick={() => setKind("devoir")}
-          className="gap-1.5"
+          className="gap-1 px-1.5 text-xs"
         >
-          <CalendarX2 className="size-4" /> Devoir
+          <CalendarX2 className="size-3.5 shrink-0" /> Devoir
         </Button>
         <Button
           type="button"
+          size="sm"
           variant={kind === "cours" ? "default" : "outline"}
           onClick={() => setKind("cours")}
-          className="gap-1.5"
+          className="gap-1 px-1.5 text-xs"
         >
-          <Link2 className="size-4" /> Fiche de cours
+          <Link2 className="size-3.5 shrink-0" /> Cours
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={kind === "revision" ? "default" : "outline"}
+          onClick={() => setKind("revision")}
+          className="gap-1 px-1.5 text-xs"
+        >
+          <RefreshCw className="size-3.5 shrink-0" /> Révision
         </Button>
       </div>
       {date && (

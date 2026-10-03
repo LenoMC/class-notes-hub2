@@ -197,11 +197,15 @@ const schema = defineSchema(
       .index("by_slot", ["slotId"])
       .index("by_date", ["date"]),
 
-    // Fichiers de cours / devoirs rattachés à un créneau
+    // Fichiers de cours / devoirs / révisions rattachés à un créneau
     courseFiles: defineTable({
       slotId: v.id("timetableSlots"),
       title: v.string(),
-      kind: v.union(v.literal("cours"), v.literal("devoir")),
+      kind: v.union(
+        v.literal("cours"),
+        v.literal("devoir"),
+        v.literal("revision"),
+      ),
       description: v.optional(v.string()),
       fileName: v.string(),
       fileType: v.string(),

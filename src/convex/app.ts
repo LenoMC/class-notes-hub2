@@ -1290,7 +1290,7 @@ export const listChatMessages = query({
       fiche: null | {
         _id: Id<"courseFiles">;
         title: string;
-        kind: "cours" | "devoir";
+        kind: "cours" | "devoir" | "revision";
         hasFile: boolean;
         storageId: Id<"_storage"> | null;
         externalUrl: string | null;
@@ -2116,7 +2116,7 @@ export const deleteSlot = mutation({
   },
 });
 
-// ---------- Fichiers cours / devoirs ----------
+// ---------- Fichiers cours / devoirs / révisions ----------
 
 export const listFilesForSlot = query({
   // withDate : ne renvoie que les fiches visées ce jour-là (datées) — utilisé
@@ -2151,7 +2151,11 @@ export const addFileMeta = mutation({
   args: {
     slotId: v.id("timetableSlots"),
     title: v.string(),
-    kind: v.union(v.literal("cours"), v.literal("devoir")),
+    kind: v.union(
+      v.literal("cours"),
+      v.literal("devoir"),
+      v.literal("revision"),
+    ),
     description: v.optional(v.string()),
     fileName: v.string(),
     fileType: v.string(),
@@ -2251,7 +2255,11 @@ export const listAdmins = query({
 // ---------- Fichiers de la classe (avec infos créneau) ----------
 
 export const listClassFiles = query({
-  args: { kind: v.optional(v.union(v.literal("cours"), v.literal("devoir"))) },
+  args: {
+    kind: v.optional(
+      v.union(v.literal("cours"), v.literal("devoir"), v.literal("revision")),
+    ),
+  },
   handler: async (ctx, { kind }) => {
     const user = await requireUser(ctx);
     if (!user.classId) return [];
@@ -2262,7 +2270,7 @@ export const listClassFiles = query({
     const files = [] as Array<{
       _id: Id<"courseFiles">;
       title: string;
-      kind: "cours" | "devoir";
+      kind: "cours" | "devoir" | "revision";
       description: string | null;
       fileName: string;
       fileType: string;

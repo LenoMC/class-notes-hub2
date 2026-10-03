@@ -13,7 +13,7 @@ import { AppShell } from "@/components/AppShell";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
-import { cn } from "@/lib/utils";
+import { cn, kindDotClass, kindLabel } from "@/lib/utils";
 import { optionRuleError, subjectStyle } from "@/lib/subjects";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -681,7 +681,7 @@ type QuickMessage = {
   fiche: null | {
     _id: string;
     title: string;
-    kind: "cours" | "devoir";
+    kind: "cours" | "devoir" | "revision";
     hasFile: boolean;
     storageId: string | null;
     externalUrl: string | null;
@@ -790,7 +790,7 @@ function ChatQuick({ user }: { user: Me }) {
                         {m.fiche.title}
                       </span>
                       <Badge variant="outline" className="text-[9px] uppercase shrink-0">
-                        {m.fiche.kind}
+                        {kindLabel(m.fiche.kind)}
                       </Badge>
                     </p>
                   )}
@@ -902,7 +902,7 @@ function RecentFiles({ files }: { files: ClassFiles | undefined }) {
                 <span
                   className={cn(
                     "size-2 rounded-full shrink-0",
-                    f.kind === "devoir" ? "bg-primary" : "bg-muted-foreground/60",
+                    kindDotClass(f.kind),
                   )}
                 />
                 <div className="min-w-0 flex-1">
@@ -912,7 +912,7 @@ function RecentFiles({ files }: { files: ClassFiles | undefined }) {
                   </p>
                 </div>
                 <Badge variant="outline" className="text-[10px] uppercase">
-                  {f.kind}
+                  {kindLabel(f.kind)}
                 </Badge>
                 {f.hasFile && <Download className="size-4 text-muted-foreground" />}
                 {f.externalUrl && (

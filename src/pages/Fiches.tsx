@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
-import { cn } from "@/lib/utils";
+import { cn, kindDotClass, kindLabel } from "@/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -20,6 +20,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  RefreshCw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -28,7 +29,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 type Fiche = {
   _id: Id<"courseFiles">;
   title: string;
-  kind: "cours" | "devoir";
+  kind: "cours" | "devoir" | "revision";
   description: string | null;
   fileName: string;
   fileType: string;
@@ -77,6 +78,7 @@ const FILTERS = [
   { value: "all", label: "Tout", icon: FolderOpen },
   { value: "cours", label: "Cours", icon: BookOpen },
   { value: "devoir", label: "Devoirs", icon: ClipboardList },
+  { value: "revision", label: "Révisions", icon: RefreshCw },
 ] as const;
 
 /** Identifiant DOM sûr pour une ancre de matière. */
@@ -157,13 +159,14 @@ export default function Fiches() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Fiches</h1>
             <p className="text-sm text-muted-foreground">
-              Toutes les fiches de cours et devoirs publiés sur l'emploi du temps
+              Toutes les fiches de cours, devoirs et révisions publiées sur
+              l'emploi du temps
               {user?.className ? ` de ${user.className}` : ""}.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-secondary/40 p-1">
+        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-secondary/40 p-1">
           {FILTERS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
@@ -275,9 +278,7 @@ export default function Fiches() {
                           <span
                             className={cn(
                               "size-2 shrink-0 rounded-full",
-                              f.kind === "devoir"
-                                ? "bg-primary"
-                                : "bg-muted-foreground/60",
+                              kindDotClass(f.kind),
                             )}
                           />
                           <div className="min-w-0 flex-1">
@@ -295,7 +296,7 @@ export default function Fiches() {
                             variant="outline"
                             className="shrink-0 text-[10px] uppercase"
                           >
-                            {f.kind}
+                            {kindLabel(f.kind)}
                           </Badge>
                           {f.externalUrl && (
                             <Button
