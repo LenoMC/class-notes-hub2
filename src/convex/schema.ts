@@ -300,6 +300,16 @@ const schema = defineSchema(
   {
     schemaValidation: false,
   },
-);
 
+  pronoteAuth: defineTable({
+    adminId: v.id("users"),
+    classId: v.id("classes"),
+    deviceUUID: v.string(),
+    kind: v.float64(),
+    token: v.string(),
+    updatedAt: v.float64(),
+    url: v.string(),
+    username: v.string(),
+  }),
+);
 export default schema;
