@@ -207,7 +207,7 @@ createRoot(document.getElementById("root")!).render(
                   <RequireAuth>
                     <PronoteStatus />
                   </RequireAuth>
-                  } 
+                } 
                 />
               <Route 
                 path="*" 
