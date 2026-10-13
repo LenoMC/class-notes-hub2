@@ -3,7 +3,6 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
-import { PronoteStatus } from "./PronoteStatus";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -21,6 +20,7 @@ const Sondages = lazy(() => import("./pages/Sondages.tsx"));
 const Admin = lazy(() => import("./pages/Admin.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const PronoteStatus = lazy(() => import("./pages/PronoteStatus.tsx"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
