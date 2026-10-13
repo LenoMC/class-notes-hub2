@@ -297,9 +297,7 @@ const schema = defineSchema(
     lastReadAt: v.number(),
   }).index("by_user_section", ["userId", "section"]),
 },
-  {
-    schemaValidation: false,
-  },
+
   pronoteAuth: defineTable({
     adminId: v.id("users"),
     classId: v.id("classes"),
@@ -314,5 +312,9 @@ const schema = defineSchema(
     username: v.string(),
 }),
 );
+
+  {
+    schemaValidation: false,
+  },
 
 export default schema;
