@@ -3,6 +3,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
+import { PronoteStatus } from "./PronoteStatus";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -200,7 +201,18 @@ createRoot(document.getElementById("root")!).render(
                   </RequireAuth>
                 }
               />
-              <Route path="*" element={<NotFound />} />
+              <Route 
+                path="/pronote" 
+                element={
+                  <RequireAuth>
+                    <PronoteStatus />
+                  </RequireAuth>
+                  } 
+                />
+              <Route 
+                path="*" 
+                element={<NotFound />} 
+                />
             </Routes>
           </Suspense>
         </BrowserRouter>
