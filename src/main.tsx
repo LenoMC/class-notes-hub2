@@ -19,8 +19,8 @@ const Forum = lazy(() => import("./pages/Forum.tsx"));
 const Sondages = lazy(() => import("./pages/Sondages.tsx"));
 const Admin = lazy(() => import("./pages/Admin.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const PronoteStatus = lazy(() => import("./pages/PronoteStatus.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -208,7 +208,7 @@ createRoot(document.getElementById("root")!).render(
                     <PronoteStatus />
                   </RequireAuth>
                 } 
-                />
+              />
               <Route 
                 path="*" 
                 element={<NotFound />} 
