@@ -296,7 +296,6 @@ const schema = defineSchema(
     ),
     lastReadAt: v.number(),
   }).index("by_user_section", ["userId", "section"]),
-},
 
   pronoteAuth: defineTable({
     adminId: v.id("users"),
@@ -312,6 +311,7 @@ const schema = defineSchema(
     username: v.string(),
 }),
 );
+},
 
   {
     schemaValidation: false,
