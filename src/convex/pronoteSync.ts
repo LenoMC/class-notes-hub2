@@ -41,7 +41,7 @@ async function runSync(ctx: ActionCtx): Promise<SyncResult> {
     const handle: any = pawnote.createSessionHandle();
     const refresh: any = await pawnote.loginToken(handle, {
       url: auth.url,
-      kind: auth.kind,
+      kind: auth.kind as any,
       username: auth.username,
       token: auth.token,
       deviceUUID: auth.deviceUUID,
