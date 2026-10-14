@@ -1,13 +1,14 @@
 "use node";
-// Actions Node : connexion à Pronote avec Pawnote (npm i pawnote).
+// Actions Node : connexion à Pronote avec Pawnote.
 import { action, internalAction, ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import * as pawnote from "pawnote";
 
-// À lancer UNE fois :
-// npx convex run pronoteSync:setup '{"qr": {...}, "pin": "1234", "classId": "...", "adminId": "..."}'
+type SyncResult = { updated: number; cancelled: number; unmatched: number };
+
+// À lancer UNE fois depuis le dashboard Convex (Functions > pronoteSync:setup)
 export const setup = internalAction({
   args: {
     qr: v.any(),
@@ -32,7 +33,7 @@ export const setup = internalAction({
   },
 });
 
-async function runSync(ctx: ActionCtx) {
+async function runSync(ctx: ActionCtx): Promise<SyncResult> {
   const auth = await ctx.runQuery(internal.pronote.getAuth, {});
   if (!auth) throw new Error("Pas de connexion : lance d'abord pronoteSync:setup");
 
@@ -52,38 +53,43 @@ async function runSync(ctx: ActionCtx) {
       username: refresh.username,
     });
 
-    const user = handle.user.resources[0];
     const lessons: any[] = [];
 
     for (let i = 0; i < 3; i++) { // cette semaine + 2 suivantes
       const d = new Date();
       d.setUTCDate(d.getUTCDate() + 7 * i);
       const week = pawnote.translateToWeekNumber(d, handle.instance.firstMonday);
-      const tt: any = await pawnote.timetableFromWeek(handle, user, week);
-      pawnote.parseTimetable(tt, {
+      const tt: any = await pawnote.timetableFromWeek(handle, week);
+      pawnote.parseTimetable(handle, tt, {
         withSuperposedCanceledClasses: false,
         withCanceledClasses: true,
         withPlannedClasses: true,
       });
 
-      for (const c of tt.classes) {
-        if (c.kind !== pawnote.TimetableClassKind.Lesson) continue;
+      for (const c of tt.classes as any[]) {
+        const subject =
+          typeof c.subject === "string" ? c.subject : c.subject?.name;
+        if (!subject || !c.startDate || !c.endDate) continue; // ignore activités, retenues...
         const start: Date = c.startDate;
         const end: Date = c.endDate;
         lessons.push({
           date: start.toISOString().slice(0, 10),
           start: start.toISOString().slice(11, 16),
           end: end.toISOString().slice(11, 16),
-          subject: c.subject?.name ?? "",
-          teacher: c.teacherNames?.join(", ") || undefined,
-          room: c.classrooms?.join(", ") || undefined,
+          subject,
+          teacher: Array.isArray(c.teacherNames) && c.teacherNames.length
+            ? c.teacherNames.join(", ")
+            : undefined,
+          room: Array.isArray(c.classrooms) && c.classrooms.length
+            ? c.classrooms.join(", ")
+            : undefined,
           color: c.backgroundColor || undefined,
           cancelled: !!c.canceled,
         });
       }
     }
 
-    const res = await ctx.runMutation(internal.pronote.applyLessons, { lessons });
+    const res: SyncResult = await ctx.runMutation(internal.pronote.applyLessons, { lessons });
     await ctx.runMutation(internal.pronote.recordRun, {
       ok: true,
       message: `${lessons.length} cours lus : ${res.updated} mis à jour, ${res.cancelled} annulés, ${res.unmatched} sans correspondance`,
@@ -98,19 +104,19 @@ async function runSync(ctx: ActionCtx) {
   }
 }
 
-// Lancée par le cron, ou à la main : npx convex run pronoteSync:sync
+// Lancée par le cron toutes les 3 heures.
 export const sync = internalAction({
   args: {},
-  handler: async (ctx) => runSync(ctx),
+  handler: async (ctx): Promise<SyncResult> => runSync(ctx),
 });
 
 // Bouton "Synchroniser maintenant" de la page /pronote (admins uniquement).
 export const syncNow = action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<SyncResult> => {
     const uid = await getAuthUserId(ctx);
     if (!uid) throw new Error("Non connecté");
-    const ok = await ctx.runQuery(internal.pronote.isAdminUser, { userId: uid });
+    const ok: boolean = await ctx.runQuery(internal.pronote.isAdminUser, { userId: uid });
     if (!ok) throw new Error("Réservé aux admins");
     return runSync(ctx);
   },
