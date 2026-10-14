@@ -297,7 +297,7 @@ const schema = defineSchema(
     lastReadAt: v.number(),
   }).index("by_user_section", ["userId", "section"]),
 
-  pronoteAuth: defineTable({
+    pronoteAuth: defineTable({
     adminId: v.id("users"),
     classId: v.id("classes"),
     deviceUUID: v.string(),
@@ -309,12 +309,11 @@ const schema = defineSchema(
     updatedAt: v.float64(),
     url: v.string(),
     username: v.string(),
-}),
-);
-},
-
+  }),
+  },
   {
     schemaValidation: false,
   },
+);
 
 export default schema;
