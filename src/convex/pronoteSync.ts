@@ -5,6 +5,15 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import * as pawnote from "pawnote";
+import { defaultFetcher } from "@literate.ink/utilities";
+
+const fetcher = async (req: any) => {
+  const res: any = await defaultFetcher(req);
+  if (typeof res.content === "string" && res.content.includes("Start (")) {
+    res.content = res.content.replace(/\)\s*;\s*\}\s*catch/, ")}catch");
+  }
+  return res;
+};
 
 export const ping = internalAction({
   args: {},
