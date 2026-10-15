@@ -42,14 +42,15 @@ type SyncResult = { updated: number; cancelled: number; unmatched: number };
 // À lancer UNE fois depuis le dashboard Convex (Functions > pronoteSync:setup)
 export const setup = internalAction({
   args: {
-    jeton: v.string(),
-    login: v.string(),
-    url: v.string(),
+    qr: v.string(),   // le JSON décodé du QR, collé tel quel
     pin: v.string(),
     classId: v.id("classes"),
     adminId: v.id("users"),
   },
-  handler: async (ctx, { jeton, login, url, pin, classId, adminId }) => {
+  handler: async (ctx, { qr, pin, classId, adminId }) => {
+    const { jeton, login, url } = JSON.parse(qr);
+    const handle = pawnote.createSessionHandle(fetcher);
+    // ... le reste du handler inchangé (loginQrCode, saveAuth)
     const handle = pawnote.createSessionHandle(fetcher);
     const deviceUUID = "classheure-convex";
     const refresh: any = await pawnote.loginQrCode(handle, {
