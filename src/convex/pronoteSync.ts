@@ -50,8 +50,6 @@ export const setup = internalAction({
   handler: async (ctx, { qr, pin, classId, adminId }) => {
     const { jeton, login, url } = JSON.parse(qr);
     const handle = pawnote.createSessionHandle(fetcher);
-    // ... le reste du handler inchangé (loginQrCode, saveAuth)
-    const handle = pawnote.createSessionHandle(fetcher);
     const deviceUUID = "classheure-convex";
     const refresh: any = await pawnote.loginQrCode(handle, {
       deviceUUID,
