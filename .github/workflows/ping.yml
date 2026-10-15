@@ -1,0 +1,7 @@
+name: ping-pronote
+on: workflow_dispatch
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -sS -m 20 -o /dev/null -w "HTTP %{http_code}\n" "https://0762123v.index-education.net/pronote/mobile.eleve.html?fd=1"
