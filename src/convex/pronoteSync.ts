@@ -18,9 +18,9 @@ async function safeFetch<T>(label: string, fn: () => Promise<T>): Promise<T | nu
   }
 }
 
-const timetable = await safeFetch("emploi du temps", () => /* ton appel */);
-const grades    = await safeFetch("notes",           () => /* ton appel */);
-const homework  = await safeFetch("devoirs",         () => /* ton appel */);
+const timetable = await safeFetch("emploi du temps");
+const grades    = await safeFetch("notes");
+const homework  = await safeFetch("devoirs");
 
 type SyncResult = { updated: number; cancelled: number; unmatched: number };
 
