@@ -38,22 +38,6 @@ export const setup = internalAction({
     return "Connexion Pronote enregistrée.";
   },
 });
-  handler: async (ctx, { qr, pin, classId, adminId }) => {
-    const handle = pawnote.createSessionHandle();
-    const deviceUUID = "classheure-convex";
-    const refresh: any = await pawnote.loginQrCode(handle, { deviceUUID, pin, qr });
-    await ctx.runMutation(internal.pronote.saveAuth, {
-      url: refresh.url,
-      kind: refresh.kind,
-      username: refresh.username,
-      token: refresh.token,
-      deviceUUID,
-      classId,
-      adminId,
-    });
-    return "Connexion Pronote enregistrée.";
-  },
-});
 
 async function runSync(ctx: ActionCtx): Promise<SyncResult> {
   const auth = await ctx.runQuery(internal.pronote.getAuth, {});
