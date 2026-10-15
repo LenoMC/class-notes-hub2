@@ -1,0 +1,21 @@
+name: pronote-login
+on:
+  workflow_dispatch:
+    inputs:
+      jeton: { required: true }
+      login: { required: true }
+      pin:   { required: true }
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - run: node scripts/pronote-login.mjs
+        env:
+          JETON: ${{ inputs.jeton }}
+          LOGIN: ${{ inputs.login }}
+          PIN: ${{ inputs.pin }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
