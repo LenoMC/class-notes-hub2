@@ -6,6 +6,22 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import * as pawnote from "pawnote";
 
+async function safeFetch<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (e: any) {
+    if (e?.name === "PageUnavailableError") {
+      console.warn(`Page indisponible : ${label}`);
+      return null;
+    }
+    throw e;
+  }
+}
+
+const timetable = await safeFetch("emploi du temps", () => /* ton appel */);
+const grades    = await safeFetch("notes",           () => /* ton appel */);
+const homework  = await safeFetch("devoirs",         () => /* ton appel */);
+
 type SyncResult = { updated: number; cancelled: number; unmatched: number };
 
 // À lancer UNE fois depuis le dashboard Convex (Functions > pronoteSync:setup)
