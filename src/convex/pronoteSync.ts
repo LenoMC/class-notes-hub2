@@ -11,11 +11,33 @@ type SyncResult = { updated: number; cancelled: number; unmatched: number };
 // À lancer UNE fois depuis le dashboard Convex (Functions > pronoteSync:setup)
 export const setup = internalAction({
   args: {
-    qr: v.any(),
+    jeton: v.string(),
+    login: v.string(),
+    url: v.string(),
     pin: v.string(),
     classId: v.id("classes"),
     adminId: v.id("users"),
   },
+  handler: async (ctx, { jeton, login, url, pin, classId, adminId }) => {
+    const handle = pawnote.createSessionHandle();
+    const deviceUUID = "classheure-convex";
+    const refresh: any = await pawnote.loginQrCode(handle, {
+      deviceUUID,
+      pin,
+      qr: { jeton, login, url },
+    } as any);
+    await ctx.runMutation(internal.pronote.saveAuth, {
+      url: refresh.url,
+      kind: refresh.kind,
+      username: refresh.username,
+      token: refresh.token,
+      deviceUUID,
+      classId,
+      adminId,
+    });
+    return "Connexion Pronote enregistrée.";
+  },
+});
   handler: async (ctx, { qr, pin, classId, adminId }) => {
     const handle = pawnote.createSessionHandle();
     const deviceUUID = "classheure-convex";
