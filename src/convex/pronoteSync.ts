@@ -18,10 +18,6 @@ async function safeFetch<T>(label: string, fn: () => Promise<T>): Promise<T | nu
   }
 }
 
-const timetable = await safeFetch("emploi du temps");
-const grades    = await safeFetch("notes");
-const homework  = await safeFetch("devoirs");
-
 type SyncResult = { updated: number; cancelled: number; unmatched: number };
 
 // À lancer UNE fois depuis le dashboard Convex (Functions > pronoteSync:setup)
