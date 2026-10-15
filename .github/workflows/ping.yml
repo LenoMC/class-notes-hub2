@@ -5,11 +5,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          curl -sS -m 20 -D headers.txt -o page.html \
+          curl -sS -m 20 -o page.html \
             -H "Cookie: appliMobile=1" \
             -A "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 PRONOTE Mobile APP Version/2.0.11" \
             "https://0762123v.index-education.net/pronote/mobile.eleve.html?fd=1&login=true"
-          head -n 15 headers.txt
-          grep -o ">PRONOTE [0-9.]*" page.html || echo "VERSION ABSENTE"
-          grep -o "suspendue" page.html || true
-          head -c 600 page.html
+          cat page.html
