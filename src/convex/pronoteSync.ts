@@ -6,6 +6,16 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import * as pawnote from "pawnote";
 
+export const ping = internalAction({
+  args: {},
+  handler: async () => {
+    const url = "https://0762123v.index-education.net/pronote/mobile.eleve.html?fd=1";
+    const r = await fetch(url);
+    const t = await r.text();
+    return { status: r.status, extrait: t.slice(0, 300) };
+  },
+});
+
 async function safeFetch<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
