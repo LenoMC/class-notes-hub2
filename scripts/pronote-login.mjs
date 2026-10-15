@@ -1,11 +1,23 @@
 import * as pawnote from "pawnote";
+import { defaultFetcher } from "@literate.ink/utilities";
 import { execFileSync } from "node:child_process";
 
 const { JETON, LOGIN, PIN } = process.env;
 const url = "https://0762123v.index-education.net/pronote/mobile.eleve.html";
 const deviceUUID = "classheure-convex";
 
-const handle = pawnote.createSessionHandle();
+// Corrige le ";" ajouté par Pronote 2026.2.7 après Start({...})
+const fetcher = async (req) => {
+  const res = await defaultFetcher(req);
+  if (typeof res.content === "string" && res.content.includes("Start (")) {
+    const fixed = res.content.replace(/\)\s*;\s*\}\s*catch/, ")}catch");
+    console.log("Page corrigée :", fixed !== res.content);
+    res.content = fixed;
+  }
+  return res;
+};
+
+const handle = pawnote.createSessionHandle(fetcher);
 const refresh = await pawnote.loginQrCode(handle, {
   deviceUUID,
   pin: PIN,
