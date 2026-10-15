@@ -7,14 +7,21 @@ const url = "https://0762123v.index-education.net/pronote/mobile.eleve.html";
 const deviceUUID = "classheure-convex";
 
 // Corrige le ";" ajouté par Pronote 2026.2.7 après Start({...})
+// Corrige le ";" ajouté par Pronote 2026.2.7 après Start({...})
 const fetcher = async (req) => {
-  const res = await defaultFetcher(req);
-  if (typeof res.content === "string" && res.content.includes("Start (")) {
-    const fixed = res.content.replace(/\)\s*;\s*\}\s*catch/, ")}catch");
-    console.log("Page corrigée :", fixed !== res.content);
-    res.content = fixed;
+  const res = await fetch(req.url, {
+    method: req.method ?? "GET",
+    headers: req.headers,
+    body: req.content,
+    redirect: req.redirect ?? "follow",
+  });
+  let content = await res.text();
+  if (content.includes("Start (")) {
+    const fixed = content.replace(/\)\s*;\s*\}\s*catch/, ")}catch");
+    console.log("Page corrigée :", fixed !== content);
+    content = fixed;
   }
-  return res;
+  return { content, status: res.status, headers: res.headers };
 };
 
 const handle = pawnote.createSessionHandle(fetcher);
