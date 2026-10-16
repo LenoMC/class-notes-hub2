@@ -1097,6 +1097,7 @@ type SlotViewWithExceptions = ReturnType<typeof slotView> & {
     replacementSubject: string | null;
     replacementTeacher: string | null;
     replacementRoom: string | null;
+    replacementColor: e.replacementColor ?? null,
   }>;
 };
 
