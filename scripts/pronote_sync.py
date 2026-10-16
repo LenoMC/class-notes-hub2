@@ -19,8 +19,7 @@ try:
         raise RuntimeError("token_login a échoué (jeton expiré ? relance setup.py)")
 
     # TOUT DE SUITE : le jeton a changé, on le sauvegarde avant de faire autre chose
-    url, username, token, uuid = client.export_credentials()
-    post("/pronote/credentials", {"token": token, "username": username})
+    post("/pronote/credentials", {"token": client.password, "username": client.username})
 
     monday = date.today() - timedelta(days=date.today().weekday())
     lessons = client.lessons(monday, monday + timedelta(days=21))   # semaine actuelle + 2 suivantes
