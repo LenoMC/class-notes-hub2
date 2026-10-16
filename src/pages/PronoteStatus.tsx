@@ -108,24 +108,17 @@ export default function PronoteStatus() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  Dernière synchro : <span className="text-foreground">{lastSync}</span>
-                </div>
-
-                {status.lastResult && (
-                  <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>{status.lastResult}</span>
+                {status.connections.map((c) => (
+                  <div key={c.label} className="rounded-lg border border-border p-3 space-y-1 text-sm">
+                    <div className="font-medium capitalize">{c.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Dernière synchro :{" "}
+                      {c.lastSyncAt ? new Date(c.lastSyncAt).toLocaleString("fr-FR") : "jamais"}
+                    </div>
+                    {c.lastResult && <div>✅ {c.lastResult}</div>}
+                    {c.lastError && <div className="text-destructive break-words">❌ {c.lastError}</div>}
                   </div>
-                )}
-
-                {status.lastError && (
-                  <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
-                    <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                    <span className="break-words">{status.lastError}</span>
-                  </div>
-                )}
+                ))}
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">
                   <Button onClick={run} disabled={busy}>
