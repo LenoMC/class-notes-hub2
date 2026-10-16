@@ -303,6 +303,7 @@ const schema = defineSchema(
     classId: v.id("classes"),
     deviceUUID: v.string(),
     kind: v.float64(),
+    label: v.optional(v.string()),
     lastError: v.optional(v.string()),
     lastResult: v.optional(v.string()),
     lastSyncAt: v.optional(v.float64()),
