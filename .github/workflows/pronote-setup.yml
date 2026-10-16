@@ -1,0 +1,32 @@
+name: Pronote setup (une seule fois)
+on:
+  workflow_dispatch:
+    inputs:
+      qr:
+        description: "JSON du QR code"
+        required: true
+      pin:
+        description: "PIN"
+        required: true
+      class_id:
+        description: "CLASS_ID (table classes de Convex)"
+        required: true
+      admin_id:
+        description: "ADMIN_ID (table users de Convex)"
+        required: true
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pronotepy requests
+      - run: python scripts/setup.py
+        env:
+          CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
+          PRONOTE_SYNC_SECRET: ${{ secrets.PRONOTE_SYNC_SECRET }}
+          QR: ${{ inputs.qr }}
+          PIN: ${{ inputs.pin }}
+          CLASS_ID: ${{ inputs.class_id }}
+          ADMIN_ID: ${{ inputs.admin_id }}
