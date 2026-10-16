@@ -191,6 +191,7 @@ const schema = defineSchema(
       replacementSubject: v.optional(v.string()),
       replacementTeacher: v.optional(v.string()),
       replacementRoom: v.optional(v.string()),
+      replacementColor: v.optional(v.string()),
       createdBy: v.id("users"),
       createdAt: v.number(),
     })
