@@ -18,6 +18,7 @@ uuid = client.uuid
 r = requests.post(f"{BASE}/pronote/setup", headers=H, json={
     "url": url, "username": username, "token": token, "deviceUUID": uuid,
     "classId": os.environ["CLASS_ID"], "adminId": os.environ["ADMIN_ID"],
+    "label": os.environ["LABEL"],
 })
 print("Réponse Convex:", r.status_code, r.text)
 r.raise_for_status()
