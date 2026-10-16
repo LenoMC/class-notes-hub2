@@ -3,6 +3,10 @@ import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 
+const http = httpRouter();
+
+auth.addHttpRoutes(http);
+
 const ok = (req: Request) =>
   !!process.env.PRONOTE_SYNC_SECRET &&
   req.headers.get("x-sync-secret") === process.env.PRONOTE_SYNC_SECRET;
@@ -67,9 +71,5 @@ http.route({
     return json(res);
   }),
 });
-
-const http = httpRouter();
-
-auth.addHttpRoutes(http);
 
 export default http;
