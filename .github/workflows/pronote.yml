@@ -1,0 +1,18 @@
+name: Pronote sync
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+concurrency: pronote-sync     # jamais deux synchros en même temps (le jeton est à usage unique)
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pronotepy requests
+      - run: python scripts/pronote_sync.py
+        env:
+          CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
+          PRONOTE_SYNC_SECRET: ${{ secrets.PRONOTE_SYNC_SECRET }}
