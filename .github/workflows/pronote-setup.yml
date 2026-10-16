@@ -2,6 +2,10 @@ name: Pronote setup (une seule fois)
 on:
   workflow_dispatch:
     inputs:
+      label:
+        description: "Nom de la connexion (ex: espagnol)"
+        required: true
+        default: "espagnol"
       qr:
         description: "JSON du QR code"
         required: true
@@ -13,9 +17,6 @@ on:
         required: true
       admin_id:
         description: "ADMIN_ID (table users de Convex)"
-        required: true
-      label:
-        description: "LABEL"
         required: true
 jobs:
   setup:
@@ -29,6 +30,7 @@ jobs:
         env:
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           PRONOTE_SYNC_SECRET: ${{ secrets.PRONOTE_SYNC_SECRET }}
+          LABEL: ${{ inputs.label }}
           QR: ${{ inputs.qr }}
           PIN: ${{ inputs.pin }}
           CLASS_ID: ${{ inputs.class_id }}
