@@ -1097,7 +1097,7 @@ type SlotViewWithExceptions = ReturnType<typeof slotView> & {
     replacementSubject: string | null;
     replacementTeacher: string | null;
     replacementRoom: string | null;
-    replacementColor: e.replacementColor ?? null,
+    replacementColor: string | null;
   }>;
 };
 
@@ -1123,6 +1123,7 @@ async function mergeSlotExceptions(
         replacementSubject: e.replacementSubject ?? null,
         replacementTeacher: e.replacementTeacher ?? null,
         replacementRoom: e.replacementRoom ?? null,
+        replacementColor: e.replacementColor ?? null,
       });
       bySlot.set(e.slotId, list);
     }
@@ -1176,6 +1177,7 @@ export const setSlotException = mutation({
     replacementSubject: v.optional(v.string()),
     replacementTeacher: v.optional(v.string()),
     replacementRoom: v.optional(v.string()),
+    replacementColor: v.optional(v.string()),
   },
   handler: async (ctx, { slotId, date, kind, reason, ...repl }) => {
     const user = await requireUser(ctx);
