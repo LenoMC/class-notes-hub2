@@ -82,6 +82,7 @@ type SlotException = {
   reason: string | null;
   replacementSubject: string | null;
   replacementTeacher: string | null;
+  replacementColor?: string | null;
   replacementRoom: string | null;
 };
 
