@@ -1214,6 +1214,8 @@ export const setSlotException = mutation({
         kind === "replaced" ? repl.replacementTeacher?.trim() || undefined : undefined,
       replacementRoom:
         kind === "replaced" ? repl.replacementRoom?.trim() || undefined : undefined,
+      replacementColor:
+        kind === "replaced" ? repl.replacementColor?.trim() || undefined : undefined,
       createdBy: user._id,
       createdAt: Date.now(),
     };
