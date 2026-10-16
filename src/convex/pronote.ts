@@ -49,8 +49,8 @@ export const applyLessons = internalMutation({
   args: {
     lessons: v.array(
       v.object({
-        date: v.string(), // YYYY-MM-DD
-        start: v.string(), // HH:MM
+        date: v.string(),
+        start: v.string(),
         end: v.string(),
         subject: v.string(),
         teacher: v.optional(v.string()),
@@ -60,6 +60,95 @@ export const applyLessons = internalMutation({
       })
     ),
   },
+  handler: async (ctx, { lessons }) => {
+    const auth = await ctx.db.query("pronoteAuth").first();
+    if (!auth) return { updated: 0, cancelled: 0, unmatched: 0 };
+
+    const anchor = await ctx.db.query("weekAnchor").first();
+    const slots = await ctx.db
+      .query("timetableSlots")
+      .withIndex("by_class", (q) => q.eq("classId", auth.classId))
+      .collect();
+
+    const same = (a?: string, b?: string) => {
+      if (!a || !b) return true; // info manquante : pas de différence
+      const x = norm(a), y = norm(b);
+      return x.includes(y) || y.includes(x);
+    };
+    const isPronote = (e: { reason?: string }) => !!e.reason?.includes("Pronote");
+
+    let updated = 0, cancelled = 0, unmatched = 0;
+
+    for (const l of lessons) {
+      const day = DAYS[new Date(l.date + "T12:00:00Z").getUTCDay()];
+      const wt = anchor ? weekTypeOf(l.date, anchor.startDay) : null;
+
+      let cands = slots.filter(
+        (s) =>
+          s.day === day &&
+          s.start === l.start &&
+          (!wt || !s.weekType || s.weekType === "AB" || s.weekType === wt)
+      );
+      if (cands.length > 1) {
+        const bySubject = cands.filter((s) => same(s.subject, l.subject));
+        if (bySubject.length) cands = bySubject;
+      }
+      const slot = cands[0];
+      if (!slot) { unmatched++; continue; }
+
+      // 1. Permanent : couleur, et prof/salle seulement s'ils sont vides
+      const patch: { color?: string; teacher?: string; room?: string } = {};
+      if (l.color && l.color !== slot.color) patch.color = l.color;
+      if (!slot.teacher && l.teacher) patch.teacher = l.teacher;
+      if (!slot.room && l.room) patch.room = l.room;
+      if (Object.keys(patch).length) {
+        await ctx.db.patch(slot._id, patch);
+        Object.assign(slot, patch);
+        updated++;
+      }
+
+      // 2. Ponctuel : annulation / remplacement pour CETTE date
+      const exceptions = await ctx.db
+        .query("slotExceptions")
+        .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
+        .collect();
+      const current = exceptions.find((e) => e.date === l.date);
+      // On ne touche jamais aux exceptions créées à la main par un admin
+      if (current && !isPronote(current)) continue;
+
+      const differs =
+        !same(slot.subject, l.subject) ||
+        !same(slot.teacher, l.teacher) ||
+        !same(slot.room, l.room);
+
+      if (l.cancelled) {
+        if (current?.kind === "cancelled") continue;
+        if (current) await ctx.db.delete(current._id);
+        await ctx.db.insert("slotExceptions", {
+          slotId: slot._id, date: l.date, kind: "cancelled",
+          reason: "Annulé (Pronote)", createdBy: auth.adminId, createdAt: Date.now(),
+        });
+        cancelled++;
+      } else if (differs) {
+        if (current) await ctx.db.delete(current._id);
+        await ctx.db.insert("slotExceptions", {
+          slotId: slot._id, date: l.date, kind: "replaced",
+          reason: "Modifié (Pronote)",
+          replacementSubject: l.subject,
+          replacementTeacher: l.teacher,
+          replacementRoom: l.room,
+          createdBy: auth.adminId, createdAt: Date.now(),
+        });
+        updated++;
+      } else if (current) {
+        // Le cours est redevenu normal : on retire l'exception Pronote
+        await ctx.db.delete(current._id);
+        updated++;
+      }
+    }
+    return { updated, cancelled, unmatched };
+  },
+});
   handler: async (ctx, { lessons }) => {
     const auth = await ctx.db.query("pronoteAuth").first();
     if (!auth) return { updated: 0, cancelled: 0, unmatched: 0 };
