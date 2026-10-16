@@ -19,9 +19,9 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, req) => {
     if (!ok(req)) return json({ error: "forbidden" }, 403);
-    const a = await ctx.runQuery(internal.pronote.getAuth, {});
-    if (!a) return json({ error: "no auth" }, 404);
-    return json({ url: a.url, username: a.username, token: a.token, deviceUUID: a.deviceUUID });
+    const connections = await ctx.runQuery(internal.pronote.listAuths, {});
+    if (!connections.length) return json({ error: "no auth" }, 404);
+    return json({ connections });
   }),
 });
 
@@ -30,15 +30,13 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     if (!ok(req)) return json({ error: "forbidden" }, 403);
-    const { token, username } = await req.json();
-    const a = await ctx.runQuery(internal.pronote.getAuth, {});
-    if (!a) return json({ error: "no auth" }, 404);
-    await ctx.runMutation(internal.pronote.updateToken, { id: a._id, token, username });
+    const { id, token, username } = await req.json();
+    await ctx.runMutation(internal.pronote.updateToken, { id, token, username });
     return json({ ok: true });
   }),
 });
 
-// Première connexion (appelée une seule fois par setup.py)
+// Première connexion d'un compte (appelée une seule fois par setup.py)
 http.route({
   path: "/pronote/setup",
   method: "POST",
@@ -46,6 +44,7 @@ http.route({
     if (!ok(req)) return json({ error: "forbidden" }, 403);
     const b = await req.json();
     await ctx.runMutation(internal.pronote.saveAuth, {
+      label: b.label ?? "principal",
       url: b.url, kind: 0, username: b.username, token: b.token,
       deviceUUID: b.deviceUUID, classId: b.classId, adminId: b.adminId,
     });
@@ -58,13 +57,16 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     if (!ok(req)) return json({ error: "forbidden" }, 403);
-    const { lessons, error } = await req.json();
+    const { authId, lessons, error } = await req.json();
     if (error) {
-      await ctx.runMutation(internal.pronote.recordRun, { ok: false, message: String(error).slice(0, 500) });
+      await ctx.runMutation(internal.pronote.recordRun, {
+        authId, ok: false, message: String(error).slice(0, 500),
+      });
       return json({ ok: false });
     }
-    const res = await ctx.runMutation(internal.pronote.applyLessons, { lessons });
+    const res = await ctx.runMutation(internal.pronote.applyLessons, { authId, lessons });
     await ctx.runMutation(internal.pronote.recordRun, {
+      authId,
       ok: true,
       message: `${lessons.length} cours lus : ${res.updated} mis à jour, ${res.cancelled} annulés, ${res.unmatched} sans correspondance`,
     });
