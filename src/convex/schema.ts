@@ -216,6 +216,10 @@ const schema = defineSchema(
       // Date visée du cours/devoir ("YYYY-MM-DD") : la fiche n'apparaît dans
       // l'EDT que pour ce jour-là (au lieu de toutes les semaines).
       forDate: v.optional(v.string()),
+      // Matière réellement enseignée ce jour-là (cours de remplacement) :
+      // sans ce champ, la fiche serait rangée sous la matière du créneau
+      // récurrent (ex. un cours de français remplaçant les maths).
+      subject: v.optional(v.string()),
       createdAt: v.number(),
     }).index("by_slot", ["slotId"]),
 

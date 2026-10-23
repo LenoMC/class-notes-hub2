@@ -1259,7 +1259,16 @@ function SlotDialog({
               </Button>
             )}
             {canEdit && showUpload && (
-              <UploadForm slotId={slot._id} date={date} onDone={() => setShowUpload(false)} />
+              <UploadForm
+                slotId={slot._id}
+                date={date}
+                subject={
+                  punctual?.kind === "replaced"
+                    ? punctual.replacementSubject ?? slot.subject
+                    : slot.subject
+                }
+                onDone={() => setShowUpload(false)}
+              />
             )}
           </>
         )}
@@ -1400,10 +1409,14 @@ function DownloadButton({
 function UploadForm({
   slotId,
   date,
+  subject,
   onDone,
 }: {
   slotId: Id<"timetableSlots">;
   date: string | null;
+  // Matière effective du jour (cours de remplacement éventuel) : sert
+  // uniquement à afficher dans quelle matière la fiche sera rangée.
+  subject?: string | null;
   onDone: () => void;
 }) {
   const addFile = useMutation(api.app.addFileMeta);
@@ -1514,6 +1527,12 @@ function UploadForm({
           Sera attachée au cours du{" "}
           <strong>{date.split("-").reverse().join("/")}</strong> — elle
           n'apparaîtra dans l'EDT que ce jour-là.
+        </p>
+      )}
+      {subject && (
+        <p className="text-[11px] text-muted-foreground">
+          Sera rangée dans la matière <strong>{subject}</strong>
+          {date ? " (matière de ce jour-là, remplacement compris)" : ""}.
         </p>
       )}
       <div className="space-y-1.5">

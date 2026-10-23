@@ -2177,14 +2177,29 @@ export const addFileMeta = mutation({
     if (!user.isAdmin && !(user.isClassAdmin && user.classId === slot.classId)) {
       throw new Error("Seuls les admins peuvent ajouter des fichiers");
     }
+    // Matière réellement au programme ce jour-là : si le créneau est remplacé
+    // pour cette date (ex. français à la place des maths), la fiche doit être
+    // rangée sous la matière du remplacement, pas sous celle du créneau.
+    let subject = slot.subject;
+    if (args.forDate) {
+      const exceptions = await ctx.db
+        .query("slotExceptions")
+        .withIndex("by_slot", (q) => q.eq("slotId", args.slotId))
+        .collect();
+      const exc = exceptions.find((e) => e.date === args.forDate);
+      if (exc?.kind === "replaced" && exc.replacementSubject) {
+        subject = exc.replacementSubject;
+      }
+    }
     // EPS : aucune publication de devoirs/fichiers
-    if (isEps(slot.subject) && args.kind === "devoir") {
+    if (isEps(subject) && args.kind === "devoir") {
       throw new Error("Aucun devoir n'est publié pour l'EPS.");
     }
     const { slotId, ...rest } = args;
     return ctx.db.insert("courseFiles", {
       slotId,
       ...rest,
+      subject,
       createdAt: Date.now(),
     });
   },
@@ -2294,8 +2309,30 @@ export const listClassFiles = query({
         .query("courseFiles")
         .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
         .collect();
+      // Remplacements ponctuels du créneau (date → matière remplaçante) :
+      // sert aux fiches publiées avant l'ajout du champ `subject`.
+      let replacementByDate: Map<string, string> | null = null;
+      const replacementsFor = async () => {
+        if (!replacementByDate) {
+          const rows = await ctx.db
+            .query("slotExceptions")
+            .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
+            .collect();
+          replacementByDate = new Map();
+          for (const r of rows) {
+            if (r.kind === "replaced" && r.replacementSubject) {
+              replacementByDate.set(r.date, r.replacementSubject);
+            }
+          }
+        }
+        return replacementByDate;
+      };
       for (const f of slotFiles) {
         if (kind && f.kind !== kind) continue;
+        let subject = f.subject ?? slot.subject;
+        if (!f.subject && f.forDate) {
+          subject = (await replacementsFor()).get(f.forDate) ?? slot.subject;
+        }
         files.push({
           _id: f._id,
           title: f.title,
@@ -2311,7 +2348,8 @@ export const listClassFiles = query({
       slotId: slot._id,
           day: slot.day,
           start: slot.start,
-          subject: slot.subject,
+          // Matière du jour (remplacement éventuel) sinon celle du créneau.
+          subject,
         });
       }
     }
