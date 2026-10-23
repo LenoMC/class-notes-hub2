@@ -138,6 +138,56 @@ export function schoolYearStart(): { year: number; month: number } {
     : { year: now.getFullYear() - 1, month: 8 }; // septembre de l'an dernier
 }
 
+export type DayException = {
+  date: string;
+  kind: "cancelled" | "replaced";
+  reason: string | null;
+  replacementSubject: string | null;
+  replacementTeacher: string | null;
+  replacementRoom: string | null;
+  replacementColor: string | null;
+};
+
+type SlotLike = {
+  subject: string;
+  teacher?: string;
+  room?: string;
+  color?: string;
+  cancelled?: boolean;
+  cancellationReason?: string;
+  exceptions?: DayException[];
+};
+
+/** Applique l'exception ponctuelle d'une date à un créneau : renvoie le cours
+ *  tel qu'il a réellement lieu ce jour-là (matière du remplacement, ou cours
+ *  annulé). Sans exception pour cette date, le créneau est renvoyé tel quel. */
+export function applyDayException<T extends SlotLike>(
+  slot: T,
+  date: string | null,
+): T & { replacedToday?: boolean; cancelledToday?: boolean } {
+  if (!date) return slot;
+  const exc = slot.exceptions?.find((e) => e.date === date);
+  if (!exc) return slot;
+  if (exc.kind === "replaced") {
+    return {
+      ...slot,
+      subject: exc.replacementSubject ?? slot.subject,
+      teacher: exc.replacementTeacher ?? undefined,
+      room: exc.replacementRoom ?? undefined,
+      color: exc.replacementColor ?? undefined,
+      cancelled: false,
+      cancellationReason: undefined,
+      replacedToday: true,
+    };
+  }
+  return {
+    ...slot,
+    cancelled: false,
+    cancellationReason: exc.reason ?? undefined,
+    cancelledToday: true,
+  };
+}
+
 export function formatDayFr(day: string | null | undefined): string {
   if (!day) return "…";
   const [y, m, d] = day.split("-").map(Number);

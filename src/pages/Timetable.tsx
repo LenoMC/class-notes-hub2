@@ -39,6 +39,7 @@ import {
   periodsForDay,
 } from "@/lib/periods";
 import {
+  applyDayException,
   computeWeekState,
   dayToUTC,
   formatDayFr,
@@ -303,6 +304,18 @@ export default function Timetable() {
   if (!user) return null;
 
   const displayedSlots = slots as Slot[];
+  // Fenêtre du cours ouverte : depuis un clic dans la grille (état local) ou
+  // depuis un lien direct /edt?slot=… (tableau de bord, notifications).
+  const openSlotId = selected?._id ?? selectedSlotId;
+  const selectedBase = openSlotId
+    ? (displayedSlots.find((s) => s._id === openSlotId) ?? selected ?? null)
+    : null;
+  // Le dialog est reconstruit à partir de la liste temps réel : si une
+  // annulation / un remplacement est posé (par moi ou par un autre admin),
+  // la fenêtre du cours se met à jour sans devoir la refermer.
+  const liveSelected = selectedBase
+    ? applyDayException(selectedBase, selectedDate)
+    : null;
 
   return (
     <AppShell isAdmin={user.isAdmin}>
@@ -332,9 +345,9 @@ export default function Timetable() {
         />
       )}
 
-      {selected && (
+      {liveSelected && (
         <SlotDialog
-          slot={selected}
+          slot={liveSelected}
           canEdit={user.isAdmin || user.isClassAdmin}
           isAdmin={user.isAdmin}
           date={selectedDate}
@@ -442,40 +455,10 @@ function TimetableGrid({
       const arr = map.get(key) ?? [];
       // Exception ponctuelle pour la date affichée : le cours devient le
       // remplacement (ou annulé). Le cours d'origine disparaît de la case.
-      const date = dateForDay(s.day);
-      const exc = exceptionForDate(s, date);
-      if (exc) {
-        if (exc.kind === "replaced") {
-          arr.push({
-            ...s,
-            subject: exc.replacementSubject ?? s.subject,
-            teacher: exc.replacementTeacher ?? undefined,
-            room: exc.replacementRoom ?? undefined,
-            // La case prend la couleur de la matière de remplacement (couleur
-            // choisie pour l'exception, sinon couleur officielle de la matière
-            // remplaçante) — jamais celle du cours d'origine.
-            color: exc.replacementColor ?? undefined,
-            cancelled: false,
-            cancellationReason: undefined,
-            replacedToday: true,
-          });
-        } else {
-          // kind === "cancelled" : le cours reste affiché, barré, avec un
-          // marquage « annulé » limité à cette date (les autres semaines, il
-          // redevient normal).
-          arr.push({
-            ...s,
-            cancelled: false,
-            cancellationReason: exc.reason ?? undefined,
-            cancelledToday: true,
-          });
-        }
-        // IMPORTANT : réenregistrer la case dans la map, sinon le cours
-        // modifié disparaît de la grille.
-        map.set(key, arr);
-        continue;
-      }
-      arr.push(s);
+      // La case prend la couleur de la matière de remplacement (couleur
+      // choisie pour l'exception, sinon couleur officielle de la matière
+      // remplaçante) — jamais celle du cours d'origine.
+      arr.push(applyDayException(s, dateForDay(s.day)));
       map.set(key, arr);
     }
     return map;

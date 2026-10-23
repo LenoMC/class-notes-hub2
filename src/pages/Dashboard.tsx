@@ -15,6 +15,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, kindDotClass, kindLabel } from "@/lib/utils";
 import { optionRuleError, subjectStyle } from "@/lib/subjects";
+import { applyDayException, todayDayString } from "@/lib/weeks";
 import { useMutation, useQuery } from "convex/react";
 import {
   ArrowUpRight,
@@ -556,12 +557,16 @@ function TodaySchedule({
       api.app.listMySlots,
       isHoliday ? "skip" : { week },
     ) ?? [];
+  // Cours tels qu'ils ont réellement lieu aujourd'hui : remplacement ou
+  // annulation ponctuelle appliqués à la date du jour.
+  const today = todayDayString();
   const todaySlots = useMemo(
     () =>
       [...slots]
         .filter((s) => s.day === todayName)
+        .map((s) => applyDayException(s, today))
         .sort((a, b) => a.start.localeCompare(b.start)),
-    [slots, todayName],
+    [slots, todayName, today],
   );
   const isWeekend = todayName === "Samedi" || todayName === "Dimanche";
 
@@ -598,7 +603,7 @@ function TodaySchedule({
                   key={slot._id}
                   className={cn(
                     "flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/40 px-4 py-3 transition-colors hover:border-primary/50",
-                    slot.cancelled && "opacity-70",
+                    (slot.cancelled || slot.cancelledToday) && "opacity-70",
                   )}
                 >
                   <span className="font-mono text-xs text-primary w-12">
@@ -614,6 +619,16 @@ function TodaySchedule({
                       </span>
                       {slot.cancelled && (
                         <span className="text-xs text-destructive">(annulé)</span>
+                      )}
+                      {slot.cancelledToday && (
+                        <span className="text-xs text-destructive">
+                          (annulé{slot.cancellationReason ? ` — ${slot.cancellationReason}` : ""})
+                        </span>
+                      )}
+                      {slot.replacedToday && (
+                        <span className="text-xs text-amber-300">
+                          (cours de remplacement)
+                        </span>
                       )}
                       {slot.weekType !== "AB" && (
                         <Badge variant="outline" className="ml-2 text-[10px] font-mono">
