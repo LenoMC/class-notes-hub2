@@ -451,6 +451,10 @@ function TimetableGrid({
             subject: exc.replacementSubject ?? s.subject,
             teacher: exc.replacementTeacher ?? undefined,
             room: exc.replacementRoom ?? undefined,
+            // La case prend la couleur de la matière de remplacement (couleur
+            // choisie pour l'exception, sinon couleur officielle de la matière
+            // remplaçante) — jamais celle du cours d'origine.
+            color: exc.replacementColor ?? undefined,
             cancelled: false,
             cancellationReason: undefined,
             replacedToday: true,
