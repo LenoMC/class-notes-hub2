@@ -7,22 +7,37 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 // Attention : si ton site filtre par option avec le nom de la matière, laisse false.
 const RENAME_SUBJECTS = false;
 
+// false = on garde les couleurs officielles des matières du site.
+const SYNC_COLORS = false;
+
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"] as const;
 
-const norm = (s: string) =>
+const STOP = new Set([
+  "lv1", "lv2", "lv3", "de", "du", "des", "la", "le", "les", "et", "m", "mme", "mr", "mlle", "salle",
+]);
+
+const tokens = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t && !STOP.has(t));
 
-// Deux textes sont "pareils" si l'un contient l'autre, ou si l'un est absent.
-const same = (a?: string, b?: string) => {
+// Matière : tous les mots de l'un sont dans l'autre ("Anglais LV1" = "Anglais")
+const sameSubject = (a?: string, b?: string) => {
   if (!a || !b) return true;
-  const x = norm(a), y = norm(b);
-  if (!x || !y) return true;
-  return x.includes(y) || y.includes(x);
+  const x = tokens(a), y = tokens(b);
+  if (!x.length || !y.length) return true;
+  return x.every((t) => y.includes(t)) || y.every((t) => x.includes(t));
+};
+
+// Prof / salle : au moins un mot en commun ("M. DRONY" = "DRONY Jean")
+const sameAny = (a?: string, b?: string) => {
+  if (!a || !b) return true;
+  const x = tokens(a), y = tokens(b);
+  if (!x.length || !y.length) return true;
+  return x.some((t) => y.includes(t));
 };
 
 // Hypothèse : weekAnchor.startDay = un lundi d'une semaine "A" (format YYYY-MM-DD).
@@ -117,19 +132,19 @@ export const applyLessons = internalMutation({
       );
       // 1) créneau de la même matière ; 2) sinon un seul créneau possible (remplacement)
       const slot =
-        cands.find((s) => same(s.subject, l.subject)) ??
+        cands.find((s) => sameSubject(s.subject, l.subject)) ??
         (cands.length === 1 ? cands[0] : undefined);
       if (!slot) { unmatched++; continue; }
 
       const differs =
-        !same(slot.subject, l.subject) ||
-        !same(slot.teacher, l.teacher) ||
-        !same(slot.room, l.room);
+        !sameSubject(slot.subject, l.subject) ||
+        !sameAny(slot.teacher, l.teacher) ||
+        !sameAny(slot.room, l.room);
 
-      // 1. Cours normal : on réécrit couleur / prof / salle comme sur Pronote
+      // 1. Cours normal : on réécrit prof / salle (et couleur si activé) comme sur Pronote
       if (!l.cancelled && !differs) {
         const patch: { color?: string; teacher?: string; room?: string; subject?: string } = {};
-        if (l.color && l.color !== slot.color) patch.color = l.color;
+        if (SYNC_COLORS && l.color && l.color !== slot.color) patch.color = l.color;
         if (l.teacher && l.teacher !== slot.teacher) patch.teacher = l.teacher;
         if (l.room && l.room !== slot.room) patch.room = l.room;
         if (RENAME_SUBJECTS && l.subject !== slot.subject) patch.subject = l.subject;
@@ -158,12 +173,13 @@ export const applyLessons = internalMutation({
         });
         cancelled++;
       } else if (differs) {
+        const rColor = SYNC_COLORS ? l.color : undefined;
         if (
           current?.kind === "replaced" &&
           current.replacementSubject === l.subject &&
           current.replacementTeacher === l.teacher &&
           current.replacementRoom === l.room &&
-          current.replacementColor === l.color
+          current.replacementColor === rColor
         ) continue; // déjà à jour
         if (current) await ctx.db.delete(current._id);
         await ctx.db.insert("slotExceptions", {
@@ -172,7 +188,7 @@ export const applyLessons = internalMutation({
           replacementSubject: l.subject,
           replacementTeacher: l.teacher,
           replacementRoom: l.room,
-          replacementColor: l.color,
+          replacementColor: rColor,
           createdBy: auth.adminId, createdAt: Date.now(),
         });
         updated++;
@@ -183,6 +199,28 @@ export const applyLessons = internalMutation({
       }
     }
     return { updated, cancelled, unmatched };
+  },
+});
+
+// À lancer UNE fois depuis le dashboard Convex : remet toutes les cases en « auto »
+// (couleur officielle de la matière).
+export const resetColors = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await ctx.db.query("pronoteAuth").first();
+    if (!auth) return 0;
+    const slots = await ctx.db
+      .query("timetableSlots")
+      .withIndex("by_class", (q) => q.eq("classId", auth.classId))
+      .collect();
+    let n = 0;
+    for (const s of slots) {
+      if (s.color !== undefined) {
+        await ctx.db.patch(s._id, { color: undefined });
+        n++;
+      }
+    }
+    return n;
   },
 });
 
@@ -219,12 +257,8 @@ export const status = query({
     if (!me || !(me.isAdmin === true || me.role === "admin")) return null;
     const all = await ctx.db.query("pronoteAuth").collect();
     if (!all.length) return { connected: false as const };
-    const a = all[0];
     return {
       connected: true as const,
-      lastSyncAt: a.lastSyncAt ?? null,
-      lastResult: a.lastResult ?? null,
-      lastError: a.lastError ?? null,
       connections: all.map((c) => ({
         label: c.label ?? "principal",
         lastSyncAt: c.lastSyncAt ?? null,
