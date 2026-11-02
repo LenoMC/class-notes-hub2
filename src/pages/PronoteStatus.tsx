@@ -8,7 +8,6 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  Clock,
   Loader2,
   RefreshCw,
   XCircle,
@@ -53,19 +52,11 @@ export default function PronoteStatus() {
       const r = await syncNow({});
       setOut({ ok: true, text: r.note });
     } catch (e: any) {
-      setOut({ ok: false, text: e?.message ?? String(e) });
+      setOut({ ok: false, text: e?.data ?? e?.message ?? String(e) });
     } finally {
       setBusy(false);
     }
   };
-
-  const lastSync =
-    status.connected && status.lastSyncAt
-      ? new Date(status.lastSyncAt).toLocaleString("fr-FR", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })
-      : "jamais";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -79,7 +70,7 @@ export default function PronoteStatus() {
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Connexion Pronote</h1>
           <p className="text-sm text-muted-foreground">
-            Synchronisation automatique de l'emploi du temps : couleurs, profs, salles et annulations.
+            Synchronisation automatique de l'emploi du temps : profs, salles et annulations.
           </p>
         </div>
 
@@ -96,54 +87,68 @@ export default function PronoteStatus() {
             </CardContent>
           </Card>
         ) : (
-          <>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                  </span>
-                  Connecté à Pronote
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {status.connections.map((c) => (
-                  <div key={c.label} className="rounded-lg border border-border p-3 space-y-1 text-sm">
-                    <div className="font-medium capitalize">{c.label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Dernière synchro :{" "}
-                      {c.lastSyncAt ? new Date(c.lastSyncAt).toLocaleString("fr-FR") : "jamais"}
-                    </div>
-                    {c.lastResult && <div>✅ {c.lastResult}</div>}
-                    {c.lastError && <div className="text-destructive break-words">❌ {c.lastError}</div>}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+                Connecté à Pronote
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {status.connections.map((c) => (
+                <div
+                  key={c.label}
+                  className="rounded-lg border border-border p-3 space-y-1.5 text-sm"
+                >
+                  <div className="font-medium capitalize">{c.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Dernière synchro :{" "}
+                    {c.lastSyncAt
+                      ? new Date(c.lastSyncAt).toLocaleString("fr-FR", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : "jamais"}
                   </div>
-                ))}
-
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <Button onClick={run} disabled={busy}>
-                    {busy ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    {busy ? "Lancement…" : "Synchroniser maintenant"}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Synchro automatique toutes les 3 heures
-                  </span>
+                  {c.lastResult && (
+                    <div className="flex items-start gap-2 text-xs">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                      <span>{c.lastResult}</span>
+                    </div>
+                  )}
+                  {c.lastError && (
+                    <div className="flex items-start gap-2 text-xs text-destructive">
+                      <XCircle className="h-4 w-4 shrink-0" />
+                      <span className="break-words">{c.lastError}</span>
+                    </div>
+                  )}
                 </div>
+              ))}
 
-                {out && (
-                  <p
-                    className={`text-sm ${out.ok ? "text-muted-foreground" : "text-destructive"}`}
-                  >
-                    {out.ok ? out.text : "Erreur : " + out.text}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <Button onClick={run} disabled={busy}>
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  {busy ? "Lancement…" : "Synchroniser maintenant"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Synchro automatique toutes les 3 heures
+                </span>
+              </div>
+
+              {out && (
+                <p className={`text-sm ${out.ok ? "text-muted-foreground" : "text-destructive"}`}>
+                  {out.ok ? out.text : "Erreur : " + out.text}
+                </p>
+              )}
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
