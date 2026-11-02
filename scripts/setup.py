@@ -7,18 +7,14 @@ qr = json.loads(os.environ["QR"])
 client = pronotepy.Client.qrcode_login(qr, os.environ["PIN"], "classheure-gh")
 assert client.logged_in
 
-creds = client.export_credentials()
-print("DEBUG nb valeurs:", len(creds))
-
-url = client.pronote_url
-username = client.username
-token = client.password
-uuid = client.uuid
-
 r = requests.post(f"{BASE}/pronote/setup", headers=H, json={
-    "url": url, "username": username, "token": token, "deviceUUID": uuid,
-    "classId": os.environ["CLASS_ID"], "adminId": os.environ["ADMIN_ID"],
     "label": os.environ["LABEL"],
+    "url": client.pronote_url,
+    "username": client.username,
+    "token": client.password,
+    "deviceUUID": client.uuid,
+    "classId": os.environ["CLASS_ID"],
+    "adminId": os.environ["ADMIN_ID"],
 })
 print("Réponse Convex:", r.status_code, r.text)
 r.raise_for_status()
