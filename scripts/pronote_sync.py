@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 BASE = os.environ["CONVEX_SITE_URL"]
 H = {"x-sync-secret": os.environ["PRONOTE_SYNC_SECRET"]}
+MODE = "reinit" if os.environ.get("MODE") == "reinit" else "refresh"
 
 def api(method, path, payload=None):
     r = requests.request(method, f"{BASE}{path}", headers=H, json=payload, timeout=60)
@@ -11,6 +12,7 @@ def api(method, path, payload=None):
 
 failed = False
 connections = api("GET", "/pronote/credentials")["connections"]
+print("Mode :", MODE)
 
 for c in connections:
     label = c["label"]
@@ -43,7 +45,8 @@ for c in connections:
             })
         out = [{k: v for k, v in d.items() if v is not None} for d in out]
 
-        print(f"[{label}]", api("POST", "/pronote/lessons", {"authId": c["id"], "lessons": out}))
+        print(f"[{label}]", api("POST", "/pronote/lessons",
+                               {"authId": c["id"], "mode": MODE, "lessons": out}))
     except Exception as e:
         failed = True
         print(f"[{label}] ERREUR : {e}")
