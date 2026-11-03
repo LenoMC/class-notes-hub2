@@ -3,12 +3,12 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-// true = le nom de la matière du créneau est aussi remplacé par celui de Pronote.
-// Attention : si ton site filtre par option avec le nom de la matière, laisse false.
-const RENAME_SUBJECTS = false;
-
 // false = on garde les couleurs officielles des matières du site.
 const SYNC_COLORS = false;
+
+// true = en mode « réinitialiser », la matière du cours de base est aussi
+// corrigée quand elle est vraiment différente de Pronote.
+const REINIT_SUBJECT = true;
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"] as const;
 
@@ -93,6 +93,8 @@ export const updateToken = internalMutation({
 export const applyLessons = internalMutation({
   args: {
     authId: v.id("pronoteAuth"),
+    // refresh = exceptions de date seulement ; reinit = modifie aussi les cours de base
+    mode: v.optional(v.union(v.literal("refresh"), v.literal("reinit"))),
     lessons: v.array(
       v.object({
         date: v.string(), // YYYY-MM-DD
@@ -106,7 +108,8 @@ export const applyLessons = internalMutation({
       })
     ),
   },
-  handler: async (ctx, { authId, lessons }) => {
+  handler: async (ctx, { authId, mode, lessons }) => {
+    const reinit = mode === "reinit";
     const auth = await ctx.db.get(authId);
     if (!auth) return { updated: 0, cancelled: 0, unmatched: 0 };
 
@@ -136,18 +139,21 @@ export const applyLessons = internalMutation({
         (cands.length === 1 ? cands[0] : undefined);
       if (!slot) { unmatched++; continue; }
 
-      const differs =
-        !sameSubject(slot.subject, l.subject) ||
-        !sameAny(slot.teacher, l.teacher) ||
-        !sameAny(slot.room, l.room);
+      const exceptions = await ctx.db
+        .query("slotExceptions")
+        .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
+        .collect();
+      const current = exceptions.find((e) => e.date === l.date);
+      // Exception créée à la main : on n'y touche jamais
+      const manual = !!current && !isPronote(current);
 
-      // 1. Cours normal : on réécrit prof / salle (et couleur si activé) comme sur Pronote
-      if (!l.cancelled && !differs) {
-        const patch: { color?: string; teacher?: string; room?: string; subject?: string } = {};
+      // --- MODE RÉINITIALISER : on modifie le cours de base (à la souche) ---
+      if (reinit && !l.cancelled && !manual) {
+        const patch: { subject?: string; teacher?: string; room?: string; color?: string } = {};
+        if (REINIT_SUBJECT && !sameSubject(slot.subject, l.subject)) patch.subject = l.subject;
+        if (l.teacher && (!slot.teacher || !sameAny(slot.teacher, l.teacher))) patch.teacher = l.teacher;
+        if (l.room && (!slot.room || !sameAny(slot.room, l.room))) patch.room = l.room;
         if (SYNC_COLORS && l.color && l.color !== slot.color) patch.color = l.color;
-        if (l.teacher && l.teacher !== slot.teacher) patch.teacher = l.teacher;
-        if (l.room && l.room !== slot.room) patch.room = l.room;
-        if (RENAME_SUBJECTS && l.subject !== slot.subject) patch.subject = l.subject;
         if (Object.keys(patch).length) {
           await ctx.db.patch(slot._id, patch);
           Object.assign(slot, patch);
@@ -155,15 +161,14 @@ export const applyLessons = internalMutation({
         }
       }
 
-      // 2. Ponctuel : annulation / remplacement pour CETTE date
-      const exceptions = await ctx.db
-        .query("slotExceptions")
-        .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
-        .collect();
-      const current = exceptions.find((e) => e.date === l.date);
-      // On ne touche jamais aux exceptions créées à la main
-      if (current && !isPronote(current)) continue;
+      if (manual) continue;
 
+      const differs =
+        !sameSubject(slot.subject, l.subject) ||
+        !sameAny(slot.teacher, l.teacher) ||
+        !sameAny(slot.room, l.room);
+
+      // --- Exceptions de date (annulation / remplacement) ---
       if (l.cancelled) {
         if (current?.kind === "cancelled") continue;
         if (current) await ctx.db.delete(current._id);
@@ -172,7 +177,7 @@ export const applyLessons = internalMutation({
           reason: "Annulé (Pronote)", createdBy: auth.adminId, createdAt: Date.now(),
         });
         cancelled++;
-      } else if (differs) {
+      } else if (!reinit && differs) {
         const rColor = SYNC_COLORS ? l.color : undefined;
         if (
           current?.kind === "replaced" &&
@@ -193,7 +198,7 @@ export const applyLessons = internalMutation({
         });
         updated++;
       } else if (current) {
-        // Le cours est redevenu normal : on retire l'exception Pronote
+        // Cours redevenu normal (ou cours de base corrigé) : on retire l'exception Pronote
         await ctx.db.delete(current._id);
         updated++;
       }
@@ -243,28 +248,3 @@ export const recordRun = internalMutation({
       lastSyncAt: Date.now(),
       lastResult: ok ? message : undefined,
       lastError: ok ? undefined : message,
-    });
-  },
-});
-
-// Réservé aux admins. Ne renvoie jamais les jetons.
-export const status = query({
-  args: {},
-  handler: async (ctx) => {
-    const uid = await getAuthUserId(ctx);
-    if (!uid) return null;
-    const me = await ctx.db.get(uid);
-    if (!me || !(me.isAdmin === true || me.role === "admin")) return null;
-    const all = await ctx.db.query("pronoteAuth").collect();
-    if (!all.length) return { connected: false as const };
-    return {
-      connected: true as const,
-      connections: all.map((c) => ({
-        label: c.label ?? "principal",
-        lastSyncAt: c.lastSyncAt ?? null,
-        lastResult: c.lastResult ?? null,
-        lastError: c.lastError ?? null,
-      })),
-    };
-  },
-});
