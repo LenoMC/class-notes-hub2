@@ -1,11 +1,11 @@
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 export const syncNow = action({
-  args: {},
-  handler: async (ctx) => {
+  args: { mode: v.union(v.literal("refresh"), v.literal("reinit")) },
+  handler: async (ctx, { mode }) => {
     const uid = await getAuthUserId(ctx);
     if (!uid) throw new ConvexError("Non connecté");
     const ok: boolean = await ctx.runQuery(internal.pronote.isAdminUser, { userId: uid });
@@ -25,7 +25,11 @@ export const syncNow = action({
 
     const r = await fetch(
       `https://api.github.com/repos/${repo}/actions/workflows/pronote.yml/dispatches`,
-      { method: "POST", headers, body: JSON.stringify({ ref: "main" }) },
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ref: "main", inputs: { mode } }),
+      },
     );
     if (!r.ok) {
       let detail = `GitHub ${r.status}`;
@@ -44,6 +48,11 @@ export const syncNow = action({
       }
       throw new ConvexError(detail);
     }
-    return { note: "Synchro lancée, résultat dans environ 1 minute" };
+    return {
+      note:
+        mode === "reinit"
+          ? "Réinitialisation lancée, résultat dans environ 1 minute"
+          : "Actualisation lancée, résultat dans environ 1 minute",
+    };
   },
 });
