@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: "0 */3 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "refresh = exceptions seulement, reinit = modifie les cours à la souche"
+        required: false
+        default: "refresh"
 concurrency: pronote-sync     # jamais deux synchros en même temps (le jeton est à usage unique)
 jobs:
   sync:
@@ -16,3 +21,4 @@ jobs:
         env:
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           PRONOTE_SYNC_SECRET: ${{ secrets.PRONOTE_SYNC_SECRET }}
+          MODE: ${{ inputs.mode || 'refresh' }}
