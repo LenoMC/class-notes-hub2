@@ -10,13 +10,16 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  RotateCcw,
   XCircle,
 } from "lucide-react";
+
+type Mode = "refresh" | "reinit";
 
 export default function PronoteStatus() {
   const status = useQuery(api.pronote.status);
   const syncNow = useAction(api.pronoteTrigger.syncNow);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<Mode | null>(null);
   const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (status === undefined) {
@@ -45,16 +48,24 @@ export default function PronoteStatus() {
     );
   }
 
-  const run = async () => {
-    setBusy(true);
+  const run = async (mode: Mode) => {
+    if (
+      mode === "reinit" &&
+      !window.confirm(
+        "Réinitialiser va modifier les cours de base (prof, salle, matière) pour qu'ils soient comme sur Pronote. Continuer ?",
+      )
+    ) {
+      return;
+    }
+    setBusy(mode);
     setOut(null);
     try {
-      const r = await syncNow({});
+      const r = await syncNow({ mode });
       setOut({ ok: true, text: r.note });
     } catch (e: any) {
       setOut({ ok: false, text: e?.data ?? e?.message ?? String(e) });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -70,7 +81,7 @@ export default function PronoteStatus() {
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Connexion Pronote</h1>
           <p className="text-sm text-muted-foreground">
-            Synchronisation automatique de l'emploi du temps : profs, salles et annulations.
+            Synchronisation de l'emploi du temps : annulations, remplacements et mise à jour des cours.
           </p>
         </div>
 
@@ -128,19 +139,43 @@ export default function PronoteStatus() {
                 </div>
               ))}
 
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <Button onClick={run} disabled={busy}>
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  {busy ? "Lancement…" : "Synchroniser maintenant"}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Synchro automatique toutes les 3 heures
-                </span>
+              <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                <div className="space-y-1.5">
+                  <Button className="w-full" onClick={() => run("refresh")} disabled={busy !== null}>
+                    {busy === "refresh" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Actualiser
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Ajoute les annulations et remplacements. Les cours de base ne changent pas.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() => run("reinit")}
+                    disabled={busy !== null}
+                  >
+                    {busy === "reinit" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                    )}
+                    Réinitialiser
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Modifie les cours de base (prof, salle, matière) pour qu'ils soient comme sur Pronote.
+                  </p>
+                </div>
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                Actualisation automatique toutes les 3 heures.
+              </p>
 
               {out && (
                 <p className={`text-sm ${out.ok ? "text-muted-foreground" : "text-destructive"}`}>
