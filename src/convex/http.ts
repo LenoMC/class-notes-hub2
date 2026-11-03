@@ -57,18 +57,19 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, req) => {
     if (!ok(req)) return json({ error: "forbidden" }, 403);
-    const { authId, lessons, error } = await req.json();
+    const { authId, lessons, error, mode } = await req.json();
     if (error) {
       await ctx.runMutation(internal.pronote.recordRun, {
         authId, ok: false, message: String(error).slice(0, 500),
       });
       return json({ ok: false });
     }
-    const res = await ctx.runMutation(internal.pronote.applyLessons, { authId, lessons });
+    const m = mode === "reinit" ? "reinit" : "refresh";
+    const res = await ctx.runMutation(internal.pronote.applyLessons, { authId, mode: m, lessons });
     await ctx.runMutation(internal.pronote.recordRun, {
       authId,
       ok: true,
-      message: `${lessons.length} cours lus : ${res.updated} mis à jour, ${res.cancelled} annulés, ${res.unmatched} sans correspondance`,
+      message: `${m === "reinit" ? "Réinitialisation" : "Actualisation"} : ${lessons.length} cours lus, ${res.updated} modifiés, ${res.cancelled} annulés, ${res.unmatched} sans correspondance`,
     });
     return json(res);
   }),
