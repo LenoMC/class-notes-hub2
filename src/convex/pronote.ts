@@ -2,13 +2,13 @@
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { computeWeekState } from "../lib/weeks";
 
 // false = on garde les couleurs officielles des matières du site.
-const SYNC_COLORS = false;
+const SYNC_COLORS = true;
 
 // true = en mode « réinitialiser », la matière du cours de base est aussi
 // corrigée quand elle est vraiment différente de Pronote.
-const REINIT_SUBJECT = true;
 
 const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"] as const;
 
@@ -41,11 +41,7 @@ const sameAny = (a?: string, b?: string) => {
 };
 
 // Hypothèse : weekAnchor.startDay = un lundi d'une semaine "A" (format YYYY-MM-DD).
-function weekTypeOf(date: string, anchor: string): "A" | "B" {
-  const diff = Date.parse(date + "T00:00:00Z") - Date.parse(anchor + "T00:00:00Z");
-  const weeks = Math.floor(diff / (7 * 86400000));
-  return ((weeks % 2) + 2) % 2 === 0 ? "A" : "B";
-}
+
 
 // Toutes les connexions Pronote (une par groupe : allemand, espagnol...)
 export const listAuths = internalQuery({
@@ -90,10 +86,16 @@ export const updateToken = internalMutation({
   },
 });
 
+function mondayOf(date: string): string {
+  const d = new Date(date + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
 export const applyLessons = internalMutation({
   args: {
     authId: v.id("pronoteAuth"),
-    // refresh = exceptions de date seulement ; reinit = modifie aussi les cours de base
+    // refresh = exceptions de date seulement ; reinit = modifie aussi prof/salle des cours de base
     mode: v.optional(v.union(v.literal("refresh"), v.literal("reinit"))),
     lessons: v.array(
       v.object({
@@ -108,6 +110,135 @@ export const applyLessons = internalMutation({
       })
     ),
   },
+  handler: async (ctx, { authId, mode, lessons }) => {
+    const reinit = mode === "reinit";
+    const auth = await ctx.db.get(authId);
+    if (!auth) return { updated: 0, cancelled: 0, unmatched: 0 };
+
+    const anchor = await ctx.db.query("weekAnchor").first();
+    const holidays = (await ctx.db.query("holidays").collect()).map((h) => ({
+      label: h.label,
+      startDay: h.startDay,
+      endDay: h.endDay,
+    }));
+    const slots = await ctx.db
+      .query("timetableSlots")
+      .withIndex("by_class", (q) => q.eq("classId", auth.classId))
+      .collect();
+
+    // Lettre de la semaine (A/B) comme sur le site, vacances comprises
+    const weekOf = (date: string): "A" | "B" | null => {
+      if (!anchor) return null;
+      const monday = mondayOf(date);
+      if (holidays.some((h) => monday >= h.startDay && monday <= h.endDay)) return null;
+      return computeWeekState(monday, anchor.startDay, holidays).week as "A" | "B";
+    };
+
+    const isPronote = (e: { reason?: string }) => !!e.reason?.includes("Pronote");
+
+    // Réinitialiser : valeurs vues par créneau, sur toutes les semaines lues
+    const seen = new Map<string, { slot: (typeof slots)[number]; teachers: Set<string>; rooms: Set<string> }>();
+
+    let updated = 0, cancelled = 0, unmatched = 0;
+
+    for (const l of lessons) {
+      const day = DAYS[new Date(l.date + "T12:00:00Z").getUTCDay()];
+      const wt = weekOf(l.date);
+
+      const cands = slots.filter(
+        (s) =>
+          s.day === day &&
+          s.start === l.start &&
+          (!wt || !s.weekType || s.weekType === "AB" || s.weekType === wt)
+      );
+      const exact = cands.find((s) => sameSubject(s.subject, l.subject));
+      const slot = exact ?? (cands.length === 1 ? cands[0] : undefined);
+      if (!slot) { unmatched++; continue; }
+
+      const exceptions = await ctx.db
+        .query("slotExceptions")
+        .withIndex("by_slot", (q) => q.eq("slotId", slot._id))
+        .collect();
+      const current = exceptions.find((e) => e.date === l.date);
+      // Exception créée à la main : on n'y touche jamais
+      if (current && !isPronote(current)) continue;
+
+      // Réinitialiser : on note ce que dit Pronote pour ce créneau (cours normaux, même matière)
+      if (reinit && exact && !l.cancelled) {
+        const key = String(exact._id);
+        const entry = seen.get(key) ?? { slot: exact, teachers: new Set<string>(), rooms: new Set<string>() };
+        if (l.teacher) entry.teachers.add(l.teacher);
+        if (l.room) entry.rooms.add(l.room);
+        seen.set(key, entry);
+      }
+
+      const differs =
+        !sameSubject(slot.subject, l.subject) ||
+        !sameAny(slot.teacher, l.teacher) ||
+        !sameAny(slot.room, l.room);
+
+      if (l.cancelled) {
+        if (current?.kind === "cancelled") continue;
+        if (current) await ctx.db.delete(current._id);
+        await ctx.db.insert("slotExceptions", {
+          slotId: slot._id, date: l.date, kind: "cancelled",
+          reason: "Annulé (Pronote)", createdBy: auth.adminId, createdAt: Date.now(),
+        });
+        cancelled++;
+      } else if (reinit) {
+        // Le cours de base est corrigé plus bas : on retire l'ancienne exception Pronote
+        if (current && exact) {
+          await ctx.db.delete(current._id);
+          updated++;
+        }
+      } else if (differs) {
+        const rColor = SYNC_COLORS ? l.color : undefined;
+        if (
+          current?.kind === "replaced" &&
+          current.replacementSubject === l.subject &&
+          current.replacementTeacher === l.teacher &&
+          current.replacementRoom === l.room &&
+          current.replacementColor === rColor
+        ) continue; // déjà à jour
+        if (current) await ctx.db.delete(current._id);
+        await ctx.db.insert("slotExceptions", {
+          slotId: slot._id, date: l.date, kind: "replaced",
+          reason: "Modifié (Pronote)",
+          replacementSubject: l.subject,
+          replacementTeacher: l.teacher,
+          replacementRoom: l.room,
+          replacementColor: rColor,
+          createdBy: auth.adminId, createdAt: Date.now(),
+        });
+        updated++;
+      } else if (current) {
+        // Cours redevenu normal : on retire l'exception Pronote
+        await ctx.db.delete(current._id);
+        updated++;
+      }
+    }
+
+    // Réinitialiser : on modifie le cours de base seulement si toutes les semaines sont d'accord
+    if (reinit) {
+      for (const { slot, teachers, rooms } of seen.values()) {
+        const patch: { teacher?: string; room?: string } = {};
+        if (teachers.size === 1) {
+          const t = [...teachers][0];
+          if (!slot.teacher || !sameAny(slot.teacher, t)) patch.teacher = t;
+        }
+        if (rooms.size === 1) {
+          const r = [...rooms][0];
+          if (!slot.room || !sameAny(slot.room, r)) patch.room = r;
+        }
+        if (Object.keys(patch).length) {
+          await ctx.db.patch(slot._id, patch);
+          updated++;
+        }
+      }
+    }
+    return { updated, cancelled, unmatched };
+  },
+});
   handler: async (ctx, { authId, mode, lessons }) => {
     const reinit = mode === "reinit";
     const auth = await ctx.db.get(authId);
@@ -208,6 +339,7 @@ export const applyLessons = internalMutation({
 });
 
 // À lancer UNE fois depuis le dashboard Convex : remet toutes les cases en « auto »
+
 // (couleur officielle de la matière).
 export const resetColors = internalMutation({
   args: {},
