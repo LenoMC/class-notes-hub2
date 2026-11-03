@@ -248,3 +248,28 @@ export const recordRun = internalMutation({
       lastSyncAt: Date.now(),
       lastResult: ok ? message : undefined,
       lastError: ok ? undefined : message,
+    });
+  },
+});
+
+// Réservé aux admins. Ne renvoie jamais les jetons.
+export const status = query({
+  args: {},
+  handler: async (ctx) => {
+    const uid = await getAuthUserId(ctx);
+    if (!uid) return null;
+    const me = await ctx.db.get(uid);
+    if (!me || !(me.isAdmin === true || me.role === "admin")) return null;
+    const all = await ctx.db.query("pronoteAuth").collect();
+    if (!all.length) return { connected: false as const };
+    return {
+      connected: true as const,
+      connections: all.map((c) => ({
+        label: c.label ?? "principal",
+        lastSyncAt: c.lastSyncAt ?? null,
+        lastResult: c.lastResult ?? null,
+        lastError: c.lastError ?? null,
+      })),
+    };
+  },
+});
