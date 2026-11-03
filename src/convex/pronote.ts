@@ -220,8 +220,17 @@ export const applyLessons = internalMutation({
     }
 
     // Réinitialiser : on modifie le cours de base seulement si toutes les semaines sont d'accord
-    if (reinit) {
+   if (reinit) {
+      // Remet toutes les cases en « auto » (couleur officielle de la matière)
+      for (const s of slots) {
+        if (s.color !== undefined) {
+          await ctx.db.patch(s._id, { color: undefined });
+          updated++;
+        }
+      }
+
       for (const { slot, teachers, rooms } of seen.values()) {
+        // ... le reste ne change pas
         const patch: { teacher?: string; room?: string } = {};
         if (teachers.size === 1) {
           const t = [...teachers][0];
