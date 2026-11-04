@@ -612,7 +612,7 @@ function TimetableGrid({
       <Card className="panel border-border/70 overflow-hidden">
         <CardContent className="p-3 sm:p-5">
           <div className="overflow-x-auto scrollbar-none">
-            <div className={isMobile ? "" : "min-w-[760px]"}>
+            <div className={isMobile ? "w-full max-w-full" : "min-w-[760px]"}>
               {/* En-tête des jours — MÊME système de coordonnées absolu que le
                   corps (colLeft/COL_WIDTH) : alignement garanti au pixel, sans
                   dépendre d'une grille CSS distincte. */}
@@ -996,7 +996,10 @@ function CourseBox({
     <div
       style={slotStyle(slot.subject, slot.color)}
       className={cn(
-        "relative flex flex-col justify-center rounded-lg border px-2.5 py-2 overflow-hidden shadow-sm",
+        // min-w-0 : indispensable pour que les textes longs se coupent (…)
+        // au lieu de déborder de la case, y compris quand deux cours (A/B)
+        // partagent la même case sur téléphone.
+        "relative flex min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-2 py-1.5 shadow-sm sm:px-2.5 sm:py-2",
         gone && "line-through decoration-destructive/70",
         !eps &&
           "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg hover:brightness-110",
@@ -1013,7 +1016,7 @@ function CourseBox({
           : `${slot.subject} — voir les documents`
       }
     >
-      <p className="text-[13px] font-bold leading-tight truncate">
+      <p className="min-w-0 truncate text-[12px] font-bold leading-tight sm:text-[13px]">
         {gone && <Ban className="inline size-3 mr-1 text-destructive" />}
         {slot.subject}
       </p>
@@ -1023,15 +1026,15 @@ function CourseBox({
         </p>
       )}
       {slot.teacher && (
-        <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90 truncate">
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-[10px] opacity-90">
           <UserRound className="size-2.5 shrink-0" />
-          {slot.teacher}
+          <span className="min-w-0 truncate">{slot.teacher}</span>
         </p>
       )}
       {slot.room && (
-        <p className="flex items-center gap-1 text-[10px] opacity-80 truncate italic">
+        <p className="flex min-w-0 items-center gap-1 truncate text-[10px] opacity-80 italic">
           <MapPin className="size-2.5 shrink-0" />
-          {slot.room}
+          <span className="min-w-0 truncate">{slot.room}</span>
         </p>
       )}
       {slot.replacedToday && (
@@ -1116,7 +1119,10 @@ function SlotDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="panel border-border/80 max-w-lg max-h-[85vh] overflow-y-auto">
+      {/* grid-cols-[minmax(0,1fr)] : sans ça, un enfant trop large (nom de
+          fichier, select, texte long) élargit la colonne de la grille et la
+          fenêtre déborde de l'écran sur téléphone. */}
+      <DialogContent className="panel grid w-[calc(100%-1rem)] max-w-lg max-h-[calc(100dvh-1rem)] grid-cols-[minmax(0,1fr)] gap-3 overflow-x-hidden overflow-y-auto border-border/80 p-4 sm:gap-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1321,7 +1327,7 @@ function FileCard({ file, canEdit }: { file: FileRow; canEdit: boolean }) {
   };
 
   return (
-    <div className="rounded-lg border border-border/70 bg-secondary/40 p-3">
+    <div className="min-w-0 max-w-full rounded-lg border border-border/70 bg-secondary/40 p-3">
       <div className="flex items-start gap-3">
         <span
           className={cn(
@@ -2270,7 +2276,7 @@ function ExceptionForm({
           <select
             value={rSubject}
             onChange={(e) => setRSubject(e.target.value)}
-            className="w-full rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-w-0 max-w-full rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full"
             required
           >
             <option value="">Matière du cours de remplacement…</option>
