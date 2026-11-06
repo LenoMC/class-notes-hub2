@@ -2,7 +2,7 @@
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { computeWeekState } from "../lib/weeks";
+import { computeWeekState, WEEK_ANCHOR_DEFAULT } from "../lib/weeks";
 
 // false = on garde les couleurs officielles des matières du site.
 const SYNC_COLORS = false;
@@ -109,7 +109,9 @@ export const applyLessons = internalMutation({
     const auth = await ctx.db.get(authId);
     if (!auth) return { updated: 0, cancelled: 0, unmatched: 0 };
 
-    const anchor = await ctx.db.query("weekAnchor").first();
+        // Même ancre que le site (date par défaut si rien n'est enregistré)
+    const anchorRow = await ctx.db.query("weekAnchor").first();
+    const anchorDay = anchorRow?.startDay ?? WEEK_ANCHOR_DEFAULT;
     const holidays = (await ctx.db.query("holidays").collect()).map((h) => ({
       label: h.label,
       startDay: h.startDay,
@@ -121,11 +123,12 @@ export const applyLessons = internalMutation({
       .collect();
 
     // Lettre de la semaine (A/B) comme sur le site, vacances comprises
+        // Lettre de la semaine (A/B) comme sur le site, vacances comprises
+        // Lettre de la semaine (A/B) : exactement le même calcul que le site,
+    // avec la date du cours (pas le lundi).
     const weekOf = (date: string): "A" | "B" | null => {
-      if (!anchor) return null;
-      const monday = mondayOf(date);
-      if (holidays.some((h) => monday >= h.startDay && monday <= h.endDay)) return null;
-      return computeWeekState(monday, anchor.startDay, holidays).week as "A" | "B";
+      const st = computeWeekState(date, anchorDay, holidays);
+      return st.isHoliday ? null : st.week;
     };
 
     const isPronote = (e: { reason?: string }) => !!e.reason?.includes("Pronote");
