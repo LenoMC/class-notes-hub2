@@ -37,12 +37,6 @@ const sameAny = (a?: string, b?: string) => {
   return x.some((t) => y.includes(t));
 };
 
-function mondayOf(date: string): string {
-  const d = new Date(date + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString().slice(0, 10);
-}
-
 // Toutes les connexions Pronote (une par groupe : allemand, espagnol...)
 export const listAuths = internalQuery({
   args: {},
@@ -172,10 +166,10 @@ export const applyLessons = internalMutation({
         const ck = `${day}|${start}`;
         const cell = cells.get(ck) ?? {};
         cell[letter as "A" | "B"] = {
-          subject: majority(items, (l) => l.subject)!,
+          subject: majority(items, (l) => l.subject) ?? items[0].subject,
           teacher: majority(items, (l) => l.teacher),
           room: majority(items, (l) => l.room),
-          end: majority(items, (l) => l.end)!,
+          end: majority(items, (l) => l.end) ?? items[0].end,
         };
         cells.set(ck, cell);
       }
@@ -209,13 +203,16 @@ export const applyLessons = internalMutation({
           // Créneau déjà réservé à cette semaine : on le corrige
           if (target.weekType === L) { await setSlot(target, c); continue; }
 
-          // Créneau « toutes les semaines » : A et B identiques ?
-          const identical =
+          // Créneau « toutes les semaines » : A et B identiques (ou pas d'autre semaine) ?
+          if (
             !o ||
             (sameSubject(c.subject, o.subject) &&
               sameAny(c.teacher, o.teacher) &&
-              sameAny(c.room, o.room));
-          if (identical) { await setSlot(target, c); continue; }
+              sameAny(c.room, o.room))
+          ) {
+            await setSlot(target, c);
+            continue;
+          }
 
           // A et B différents : on sépare en deux créneaux
           await ctx.db.patch(target._id, { weekType: L });
@@ -225,8 +222,10 @@ export const applyLessons = internalMutation({
 
           const hasOther = slots.some(
             (s) =>
-              s.day === day && s.start === start &&
-              s.weekType === other && sameSubject(s.subject, o.subject)
+              s.day === day &&
+              s.start === start &&
+              s.weekType === other &&
+              sameSubject(s.subject, o.subject)
           );
           if (!hasOther) {
             const name = slots.find((s) => sameSubject(s.subject, o.subject))?.subject ?? o.subject;
@@ -314,37 +313,6 @@ export const applyLessons = internalMutation({
       }
     }
 
-    return { updated, cancelled, unmatched };
-  },
-});
-
-    // Réinitialiser : on modifie le cours de base seulement si toutes les semaines sont d'accord
-   if (reinit) {
-      // Remet toutes les cases en « auto » (couleur officielle de la matière)
-      for (const s of slots) {
-        if (s.color !== undefined) {
-          await ctx.db.patch(s._id, { color: undefined });
-          updated++;
-        }
-      }
-
-      for (const { slot, teachers, rooms } of seen.values()) {
-        // ... le reste ne change pas
-        const patch: { teacher?: string; room?: string } = {};
-        if (teachers.size === 1) {
-          const t = [...teachers][0];
-          if (!slot.teacher || !sameAny(slot.teacher, t)) patch.teacher = t;
-        }
-        if (rooms.size === 1) {
-          const r = [...rooms][0];
-          if (!slot.room || !sameAny(slot.room, r)) patch.room = r;
-        }
-        if (Object.keys(patch).length) {
-          await ctx.db.patch(slot._id, patch);
-          updated++;
-        }
-      }
-    }
     return { updated, cancelled, unmatched };
   },
 });
