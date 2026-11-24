@@ -21,13 +21,30 @@ const tokens = (s: string) =>
     .split(/[^a-z0-9]+/)
     .filter((t) => t && !STOP.has(t));
 
-// Matière : tous les mots de l'un sont dans l'autre ("Anglais LV1" = "Anglais")
+// Mots qui distinguent une option : "Anglais" et "Anglais LCE" sont deux matières
+const OPTION = new Set(["lce", "latin", "allemand", "espagnol", "securite", "civile"]);
+
+// Matière : mêmes options des deux côtés, et tous les mots de l'un dans l'autre
 const sameSubject = (a?: string, b?: string) => {
   if (!a || !b) return true;
   const x = tokens(a), y = tokens(b);
   if (!x.length || !y.length) return true;
+  const ox = x.filter((t) => OPTION.has(t));
+  const oy = y.filter((t) => OPTION.has(t));
+  if (ox.length !== oy.length || !ox.every((t) => oy.includes(t))) return false;
   return x.every((t) => y.includes(t)) || y.every((t) => x.includes(t));
 };
+
+const sameTokens = (a: string, b: string) =>
+  tokens(a).sort().join(" ") === tokens(b).sort().join(" ");
+
+// Meilleur créneau pour une matière : nom identique d'abord, puis nom proche
+function bestBySubject<T extends { subject: string }>(list: T[], subject: string): T | undefined {
+  return (
+    list.find((s) => sameTokens(s.subject, subject)) ??
+    list.find((s) => sameSubject(s.subject, subject))
+  );
+}
 
 // Prof / salle : au moins un mot en commun ("M. DRONY" = "DRONY Jean")
 const sameAny = (a?: string, b?: string) => {
@@ -149,21 +166,21 @@ export const applyLessons = internalMutation({
         return best;
       };
 
-      // Ce que dit Pronote, par jour / heure / lettre de semaine
+      // Ce que dit Pronote, par jour / heure / matière / lettre de semaine
       const groups = new Map<string, Lesson[]>();
       for (const l of lessons) {
         if (l.cancelled) continue;
         const wt = weekOf(l.date);
         if (!wt) continue;
-        const key = `${dayOf(l.date)}|${l.start}|${wt}`;
+        const key = `${dayOf(l.date)}|${l.start}|${wt}|${tokens(l.subject).sort().join("-")}`;
         const arr = groups.get(key) ?? [];
         arr.push(l);
         groups.set(key, arr);
       }
       const cells = new Map<string, Partial<Record<"A" | "B", Content>>>();
       for (const [key, items] of groups) {
-        const [day, start, letter] = key.split("|");
-        const ck = `${day}|${start}`;
+        const [day, start, letter, subjKey] = key.split("|");
+        const ck = `${day}|${start}|${subjKey}`;
         const cell = cells.get(ck) ?? {};
         cell[letter as "A" | "B"] = {
           subject: majority(items, (l) => l.subject) ?? items[0].subject,
@@ -193,10 +210,9 @@ export const applyLessons = internalMutation({
           const other: "A" | "B" = L === "A" ? "B" : "A";
           const o = cell[other];
           const here = slots.filter((s) => s.day === day && s.start === start);
-          const target = here.find(
-            (s) =>
-              (s.weekType === L || !s.weekType || s.weekType === "AB") &&
-              sameSubject(s.subject, c.subject)
+          const target = bestBySubject(
+            here.filter((s) => s.weekType === L || !s.weekType || s.weekType === "AB"),
+            c.subject
           );
           if (!target) continue;
 
@@ -228,7 +244,7 @@ export const applyLessons = internalMutation({
               sameSubject(s.subject, o.subject)
           );
           if (!hasOther) {
-            const name = slots.find((s) => sameSubject(s.subject, o.subject))?.subject ?? o.subject;
+            const name = bestBySubject(slots, o.subject)?.subject ?? o.subject;
             const id = await ctx.db.insert("timetableSlots", {
               classId: target.classId,
               day: target.day,
@@ -259,7 +275,7 @@ export const applyLessons = internalMutation({
           (!wt || !s.weekType || s.weekType === "AB" || s.weekType === wt)
       );
       const slot =
-        cands.find((s) => sameSubject(s.subject, l.subject)) ??
+        bestBySubject(cands, l.subject) ??
         (cands.length === 1 ? cands[0] : undefined);
       if (!slot) { unmatched++; continue; }
 
@@ -287,7 +303,7 @@ export const applyLessons = internalMutation({
       } else if (differs) {
         const rColor = SYNC_COLORS ? l.color : undefined;
         // On reprend le nom de matière utilisé sur ton site, pour garder sa couleur
-        const rSubject = slots.find((s) => sameSubject(s.subject, l.subject))?.subject ?? l.subject;
+        const rSubject = bestBySubject(slots, l.subject)?.subject ?? l.subject;
         if (
           current?.kind === "replaced" &&
           current.replacementSubject === rSubject &&
